@@ -128,10 +128,12 @@ async def handle_service(update: Update, context: ContextTypes.DEFAULT_TYPE):
         from database import get_conn
         today_str = get_now().strftime("%Y-%m-%d")
         conn = get_conn()
-        holiday = conn.execute(
-            "SELECT is_holiday FROM work_days WHERE worker_id = ? AND date = ? AND is_holiday = 1",
+        c = conn.cursor()
+        c.execute(
+            "SELECT is_holiday FROM work_days WHERE worker_id = %s AND date = %s AND is_holiday = 1",
             (worker["id"], today_str)
-        ).fetchone()
+        )
+        holiday = c.fetchone()
         conn.close()
         if holiday:
             await update.message.reply_text("🎉 Bugun dam olish kuni! Hordiq oling 😊")
@@ -347,7 +349,8 @@ async def handle_admin_message(update: Update, context: ContextTypes.DEFAULT_TYP
             date = datetime.strptime(text.strip(), "%d.%m.%Y").strftime("%Y-%m-%d")
             from database import get_conn
             conn = get_conn()
-            conn.execute("DELETE FROM work_days WHERE date = ? AND is_holiday = 1", (date,))
+            c = conn.cursor()
+            c.execute("DELETE FROM work_days WHERE date = %s AND is_holiday = 1", (date,))
             conn.commit()
             conn.close()
             admin_state.pop(user_id)
@@ -542,10 +545,13 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             wd = None
             from database import get_conn
             conn = get_conn()
-            wd = conn.execute(
-                "SELECT start_time, end_time FROM work_days WHERE worker_id = ? AND date = ?",
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT start_time, end_time FROM work_days WHERE worker_id = %s AND date = %s",
                 (worker["id"], date_str)
-            ).fetchone()
+            )
+            wd_row = cur.fetchone()
+            wd = {"start_time": wd_row[0], "end_time": wd_row[1]} if wd_row else None
             conn.close()
 
             time_info = ""
@@ -686,7 +692,7 @@ def main():
     jq.run_daily(evening_admin_report, time=datetime.strptime("21:00", "%H:%M").time())
 
     print("Bot ishga tushdi! ✅")
-    app.run_polling()
+    app.run_polling(drop_pending_updates=True, allowed_updates=Update.ALL_TYPES, close_loop=False)
 
 if __name__ == "__main__":
     main()
