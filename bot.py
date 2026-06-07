@@ -283,6 +283,59 @@ async def handle_service(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await context.bot.send_sticker(chat_id=update.effective_chat.id, sticker=STICKER_LAUGH)
         return
 
+    # ── Aniq sana (xodim) ──
+    user_state = admin_state.get(user_id)
+    if isinstance(user_state, dict) and user_state.get("type") == "worker":
+        if user_state.get("step") == "waiting_date_from":
+            try:
+                today_str = get_now().strftime("%Y-%m-%d")
+                tomorrow_str = (get_now() + timedelta(days=1)).strftime("%Y-%m-%d")
+                BOT_START_DATE = "2026-06-08"
+                if len(text.strip()) == 7 and text.strip()[2] == ".":
+                    month, year = text.strip().split(".")
+                    from calendar import monthrange
+                    days_in_month = monthrange(int(year), int(month))[1]
+                    date_from = f"{year}-{month.zfill(2)}-01"
+                    date_to = f"{year}-{month.zfill(2)}-{str(days_in_month).zfill(2)}"
+                else:
+                    d = datetime.strptime(text.strip(), "%d.%m.%Y")
+                    date_from = d.strftime("%Y-%m-%d")
+                    date_to = None
+                if date_from >= tomorrow_str:
+                    await update.message.reply_text("❌ Kelajak sanani kiritib bo'lmaydi!")
+                    return
+                if date_from < BOT_START_DATE:
+                    await update.message.reply_text("❌ Bot 08.06.2026 dan ishlaydi!")
+                    return
+                admin_state[user_id] = {**user_state, "step": "waiting_date_to", "date_from": date_from}
+                if date_to:
+                    await generate_custom_report(update, context, user_state, date_from, date_to)
+                    admin_state.pop(user_id)
+                else:
+                    await update.message.reply_text("Tugash sanasini kiriting (KK.OO.YYYY):\nMasalan: 18.06.2026")
+            except:
+                await update.message.reply_text("❌ Format xato! OO.YYYY yoki KK.OO.YYYY kiriting")
+            return
+
+        if user_state.get("step") == "waiting_date_to":
+            try:
+                today_str = get_now().strftime("%Y-%m-%d")
+                tomorrow_str = (get_now() + timedelta(days=1)).strftime("%Y-%m-%d")
+                d = datetime.strptime(text.strip(), "%d.%m.%Y")
+                date_to = d.strftime("%Y-%m-%d")
+                date_from = user_state["date_from"]
+                if date_to >= tomorrow_str:
+                    await update.message.reply_text("❌ Kelajak sanani kiritib bo'lmaydi!")
+                    return
+                if date_to < date_from:
+                    await update.message.reply_text("❌ Tugash sanasi boshlanish sanasidan kichik bo'lmasin!")
+                    return
+                await generate_custom_report(update, context, user_state, date_from, date_to)
+                admin_state.pop(user_id)
+            except:
+                await update.message.reply_text("❌ Format xato! KK.OO.YYYY kiriting")
+            return
+
     # ── Boshqa xizmat ──
     if text == "🔧 Boshqa xizmat":
         if not work_day or not work_day["start_time"]:
@@ -464,6 +517,7 @@ async def handle_admin_message(update: Update, context: ContextTypes.DEFAULT_TYP
     if isinstance(state, dict) and state.get("step") == "waiting_date_from":
         try:
             today_str = get_now().strftime("%Y-%m-%d")
+            tomorrow_str = (get_now() + timedelta(days=1)).strftime("%Y-%m-%d")
             BOT_START_DATE = "2026-06-08"
 
             if len(text.strip()) == 7 and text.strip()[2] == ".":
@@ -477,7 +531,7 @@ async def handle_admin_message(update: Update, context: ContextTypes.DEFAULT_TYP
                 date_from = d.strftime("%Y-%m-%d")
                 date_to = None
 
-            if date_from > today_str:
+            if date_from >= tomorrow_str:
                 await update.message.reply_text("❌ Kelajak sanani kiritib bo'lmaydi!")
                 return
             if date_from < BOT_START_DATE:
@@ -497,11 +551,12 @@ async def handle_admin_message(update: Update, context: ContextTypes.DEFAULT_TYP
     if isinstance(state, dict) and state.get("step") == "waiting_date_to":
         try:
             today_str = get_now().strftime("%Y-%m-%d")
+            tomorrow_str = (get_now() + timedelta(days=1)).strftime("%Y-%m-%d")
             d = datetime.strptime(text.strip(), "%d.%m.%Y")
             date_to = d.strftime("%Y-%m-%d")
             date_from = state["date_from"]
 
-            if date_to > today_str:
+            if date_to >= tomorrow_str:
                 await update.message.reply_text("❌ Kelajak sanani kiritib bo'lmaydi!")
                 return
             if date_to < date_from:
