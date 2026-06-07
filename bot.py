@@ -27,13 +27,15 @@ load_dotenv()
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_ID = int(os.getenv("ADMIN_ID"))
+ADMIN_ID_2 = int(os.getenv("ADMIN_ID_2", "0"))
+ADMIN_IDS = [ADMIN_ID] + ([ADMIN_ID_2] if ADMIN_ID_2 else [])
 
 STICKER_LAUGH = "CAACAgIAAxkBAAIBv2RtQkLbMnY1oqRzvXBHJJGpuHmVAAIUAANWnb0KODBFMQbMrUsvBA"
 
 ENTER_PRICE, ENTER_WORKER_ID, ENTER_WORKER_NAME, ENTER_REMOVE_ID, ENTER_HOLIDAY = range(5)
 
 def is_admin(user_id: int) -> bool:
-    return user_id == ADMIN_ID
+    return user_id in ADMIN_IDS
 
 def format_money(amount) -> str:
     if amount is None:
@@ -235,10 +237,11 @@ async def handle_service(update: Update, context: ContextTypes.DEFAULT_TYPE):
         msg = "\n".join(lines)
         await update.message.reply_text(msg, reply_markup=get_worker_keyboard())
 
-        try:
-            await context.bot.send_message(chat_id=ADMIN_ID, text=f"🔔 {msg}")
-        except:
-            pass
+        for aid in ADMIN_IDS:
+            try:
+                await context.bot.send_message(chat_id=aid, text=f"🔔 {msg}")
+            except:
+                pass
         return
 
     # ── Hisobotim ──
@@ -256,6 +259,9 @@ async def handle_service(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # ── Oxirgini o'chir ──
     if text == "🗑 Oxirgini o'chir":
+        if work_day and work_day.get("end_time"):
+            await update.message.reply_text("⚠️ Siz kunni yakunlagansiz! O'zgartirish mumkin emas.")
+            return
         from database import get_conn
         conn = get_conn()
         c = conn.cursor()
@@ -598,6 +604,21 @@ async def handle_admin_message(update: Update, context: ContextTypes.DEFAULT_TYP
             await update.message.reply_text("❌ Xatolik yuz berdi. Qayta urinib ko'ring.")
         return
 
+    if isinstance(state, dict) and state.get("step") == "waiting_admin_fix_price":
+        try:
+            price = int(text.replace(" ", "").replace(",", ""))
+            worker_id = state["worker_id"]
+            service_name = state["service_name"]
+            add_service(worker_id, service_name, price)
+            admin_state.pop(user_id)
+            await update.message.reply_text(
+                f"✅ Saqlandi!\n{service_name} — {format_money(price)}",
+                reply_markup=get_admin_keyboard()
+            )
+        except ValueError:
+            await update.message.reply_text("❌ Faqat raqam kiriting! Masalan: 70000")
+        return
+
     if state == "waiting_broadcast":
         workers = get_all_workers()
         sent = 0
@@ -797,10 +818,11 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         msg = "\n".join(lines)
         await query.edit_message_text(msg)
-        try:
-            await context.bot.send_message(chat_id=ADMIN_ID, text=f"🔔 {msg}")
-        except:
-            pass
+        for aid in ADMIN_IDS:
+            try:
+                await context.bot.send_message(chat_id=aid, text=f"🔔 {msg}")
+            except:
+                pass
         return
 
     if data.startswith("report_") and not data.endswith("_custom"):
@@ -855,9 +877,10 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [InlineKeyboardButton("1 oy", callback_data=f"wreport_{tid}_30")],
         ]
         
-        # Show restart button if worker ended their day
+        # Show restart and edit buttons if worker ended their day
         if wd and wd.get("end_time"):
             kb.append([InlineKeyboardButton("🔄 Qayta boshlash ruxsati", callback_data=f"restart_{tid}")])
+            kb.append([InlineKeyboardButton("🔧 Xizmatni tuzatish", callback_data=f"adminfix_{tid}")])
         
         await query.edit_message_text(
             f"👤 {worker['name']} — davr tanlang:",
@@ -1034,6 +1057,87 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("\n".join(lines))
         return
 
+    if data.startswith("adminfix_"):
+        tid = int(data.split("_")[1])
+        worker = get_worker(tid)
+        if not worker:
+            await query.edit_message_text("Xodim topilmadi.")
+            return
+        today = get_now().strftime("%Y-%m-%d")
+        from database import get_conn
+        conn = get_conn()
+        c = conn.cursor()
+        c.execute(
+            "SELECT id, service_name, price, created_at FROM services "
+            "WHERE worker_id = %s AND date = %s ORDER BY id",
+            (worker["id"], today)
+        )
+        rows = c.fetchall()
+        conn.close()
+        if not rows:
+            await query.edit_message_text("Bugun xizmat kiritilmagan.")
+            return
+        kb = []
+        for row in rows:
+            sid, sname, sprice, screated = row
+            time_str = screated[11:16] if screated and len(screated) > 11 else ""
+            kb.append([InlineKeyboardButton(
+                f"❌ {sname} — {format_money(sprice)} ({time_str})",
+                callback_data=f"admindel_{sid}_{tid}"
+            )])
+        kb.append([InlineKeyboardButton("🔙 Orqaga", callback_data=f"worker_{tid}")])
+        await query.edit_message_text(
+            f"👤 {worker['name']} — bugungi xizmatlar\nO'chirish uchun bosing:",
+            reply_markup=InlineKeyboardMarkup(kb)
+        )
+        return
+
+    if data.startswith("admindel_"):
+        parts = data.split("_")
+        service_id = int(parts[1])
+        tid = int(parts[2])
+        from database import get_conn
+        conn = get_conn()
+        c = conn.cursor()
+        c.execute("SELECT service_name, price FROM services WHERE id = %s", (service_id,))
+        row = c.fetchone()
+        if not row:
+            conn.close()
+            await query.edit_message_text("Xizmat topilmadi.")
+            return
+        sname, sprice = row
+        c.execute("DELETE FROM services WHERE id = %s", (service_id,))
+        conn.commit()
+        conn.close()
+
+        kb = InlineKeyboardMarkup([
+            [InlineKeyboardButton("✅ Ha, qayta kiriting", callback_data=f"adminreenter_{tid}_{sname}_{sprice}"),
+             InlineKeyboardButton("❌ Yo'q", callback_data=f"adminfix_{tid}")]
+        ])
+        await query.edit_message_text(
+            f"✅ O'chirildi: {sname} — {format_money(sprice)}\n\nQayta kiritasizmi?",
+            reply_markup=kb
+        )
+        return
+
+    if data.startswith("adminreenter_"):
+        parts = data.split("_", 3)
+        tid = int(parts[1])
+        sname = parts[2]
+        worker = get_worker(tid)
+        if not worker:
+            await query.edit_message_text("Xodim topilmadi.")
+            return
+        admin_state[query.from_user.id] = {
+            "step": "waiting_admin_fix_price",
+            "worker_id": worker["id"],
+            "service_name": sname
+        }
+        await query.edit_message_text(
+            f"👤 {worker['name']} uchun\n{sname} — yangi narxni kiriting (so'm):"
+        )
+        return
+
     if data.startswith("restart_"):
         tid = int(data.split("_")[1])
         worker = get_worker(tid)
@@ -1151,13 +1255,14 @@ async def morning_greeting(context: ContextTypes.DEFAULT_TYPE):
             )
         except:
             pass
-    try:
-        await context.bot.send_message(
-            chat_id=ADMIN_ID,
-            text="☀️ Xayrli tong Behruz aka!\nSoqqani bosaylik, endi masterlarni kuzatib boring! 💈"
-        )
-    except:
-        pass
+    for aid in ADMIN_IDS:
+        try:
+            await context.bot.send_message(
+                chat_id=aid,
+                text="☀️ Xayrli tong Behruz aka!\nSoqqani bosaylik, endi masterlarni kuzatib boring! 💈"
+            )
+        except:
+            pass
 
 async def reminder_not_started(context: ContextTypes.DEFAULT_TYPE):
     workers = workers_not_started()
@@ -1182,13 +1287,14 @@ async def reminder_not_ended(context: ContextTypes.DEFAULT_TYPE):
             pass
 
 async def evening_admin_report(context: ContextTypes.DEFAULT_TYPE):
-    try:
-        await context.bot.send_message(
-            chat_id=ADMIN_ID,
-            text="🌙 Behruz aka, soqqa ko'payib ketdi!\nPullarni ko'ring! 💰😄"
-        )
-    except:
-        pass
+    for aid in ADMIN_IDS:
+        try:
+            await context.bot.send_message(
+                chat_id=aid,
+                text="🌙 Behruz aka, soqqa ko'payib ketdi!\nPullarni ko'ring! 💰😄"
+            )
+        except:
+            pass
 
     summary = get_today_summary_all()
     total_all = sum(w["total"] or 0 for w in summary)
@@ -1221,10 +1327,11 @@ async def evening_admin_report(context: ContextTypes.DEFAULT_TYPE):
     lines.append(f"💰 Umumiy: {format_money(total_all)}")
     lines.append(f"👑 Egasiga jami: {format_money(owner_total)}")
 
-    try:
-        await context.bot.send_message(chat_id=ADMIN_ID, text="\n".join(lines))
-    except:
-        pass
+    for aid in ADMIN_IDS:
+        try:
+            await context.bot.send_message(chat_id=aid, text="\n".join(lines))
+        except:
+            pass
 
 # ─── MAIN ───
 
