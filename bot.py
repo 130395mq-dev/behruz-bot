@@ -54,6 +54,7 @@ def get_worker_keyboard():
         [KeyboardButton("🎨 Soch bo'yash"), KeyboardButton("🔧 Boshqa xizmat")],
         [KeyboardButton("🗑 Oxirgini o'chir"), KeyboardButton("📊 Hisobotim")],
         [KeyboardButton("📈 Shaxsiy rekord"), KeyboardButton("👑 Admin panel")],
+        [KeyboardButton("📖 Yo'riqnoma")],
     ]
     return ReplyKeyboardMarkup(kb, resize_keyboard=True)
 
@@ -64,6 +65,7 @@ def get_admin_keyboard():
         [KeyboardButton("💬 Xodimga xabar"), KeyboardButton("📢 Hammaga xabar")],
         [KeyboardButton("📅 Dam olish kuni belgilash"), KeyboardButton("🗓 Dam olishni bekor qilish")],
         [KeyboardButton("➕ Xodim qo'shish"), KeyboardButton("❌ Xodim o'chirish")],
+        [KeyboardButton("📖 Yo'riqnoma")],
     ]
     return ReplyKeyboardMarkup(kb, resize_keyboard=True)
 
@@ -283,6 +285,25 @@ async def handle_service(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await context.bot.send_sticker(chat_id=update.effective_chat.id, sticker=STICKER_LAUGH)
         return
 
+    # ── Yo'riqnoma (xodim) ──
+    if text == "📖 Yo'riqnoma":
+        await update.message.reply_text(
+            "📖 Botdan foydalanish yo'riqnomasi\n\n"
+            "🌅 Kunni boshlash — Ishni boshlaganingizda bosing\n"
+            "✅ Kunni yakunlash — Ishni tugatganingizda bosing\n\n"
+            "✂️ Soch olish, 🚿 Soch yuvish va boshqa tugmalar — "
+            "Xizmat ko'rsatganda bosing va narxni kiriting\n\n"
+            "🔧 Boshqa xizmat — Ro'yxatda yo'q xizmat uchun, "
+            "nom va narxni o'zingiz kiriting\n\n"
+            "🗑 Oxirgini o'chir — Noto'g'ri kiritgan bo'lsangiz, "
+            "ro'yxatdan tanlang va o'chiring\n\n"
+            "📊 Hisobotim — Bugun yoki ma'lum davr uchun o'z daromadingizni ko'ring\n"
+            "📈 Shaxsiy rekord — Eng ko'p ishlagan kuningizni ko'ring\n\n"
+            "👑 Admin panel — Faqat Behruz aka uchun 😄",
+            reply_markup=get_worker_keyboard()
+        )
+        return
+
     # ── Aniq sana (xodim) ──
     user_state = admin_state.get(user_id)
     if isinstance(user_state, dict) and user_state.get("type") == "worker":
@@ -461,7 +482,8 @@ async def handle_admin_message(update: Update, context: ContextTypes.DEFAULT_TYP
     MAIN_BUTTONS = [
         "📊 Umumiy hisobot", "👥 Masterlar", "➕ Xodim qo'shish",
         "❌ Xodim o'chirish", "📅 Dam olish kuni belgilash", "🗓 Dam olishni bekor qilish",
-        "🏆 Eng yaxshi master", "💸 Oylik maosh", "💬 Xodimga xabar", "📢 Hammaga xabar"
+        "🏆 Eng yaxshi master", "💸 Oylik maosh", "💬 Xodimga xabar", "📢 Hammaga xabar",
+        "📖 Yo'riqnoma"
     ]
     if text in MAIN_BUTTONS:
         admin_state.pop(user_id, None)
@@ -663,6 +685,23 @@ async def handle_admin_message(update: Update, context: ContextTypes.DEFAULT_TYP
     if text == "🗓 Dam olishni bekor qilish":
         admin_state[user_id] = "waiting_remove_holiday"
         await update.message.reply_text("Bekor qilinadigan sanani kiriting (KK.OO.YYYY):\nMasalan: 09.06.2025")
+        return
+
+    if text == "📖 Yo'riqnoma":
+        await update.message.reply_text(
+            "📖 Admin yo'riqnomasi\n\n"
+            "👥 Masterlar — Xodimlar holati (kim kelgan, kim kelmagan, kim yakunlagan)\n\n"
+            "📊 Umumiy hisobot — Davr bo'yicha barcha xodimlar hisoboti\n"
+            "🏆 Eng yaxshi master — Haftalik yoki oylik reyting\n"
+            "💸 Oylik maosh — Har bir xodimning 30 kunlik daromadi (70%)\n\n"
+            "💬 Xodimga xabar — Bitta xodimga botdan xabar yuborish\n"
+            "📢 Hammaga xabar — Barcha xodimlarga bir vaqtda xabar yuborish\n\n"
+            "📅 Dam olish kuni belgilash — O'sha kuni xodimlar ishlamaydi\n"
+            "🗓 Dam olishni bekor qilish — Dam olish kunini olib tashlash\n\n"
+            "➕ Xodim qo'shish — Yangi xodim Telegram ID si va ismini kiriting\n"
+            "❌ Xodim o'chirish — Xodimni tizimdan o'chirish",
+            reply_markup=get_admin_keyboard()
+        )
         return
 
     if text == "🏆 Eng yaxshi master":
