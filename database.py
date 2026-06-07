@@ -3,7 +3,7 @@ from datetime import datetime, timezone, timedelta
 
 TZ = timezone(timedelta(hours=5))
 
-def now():
+def get_now():
     return datetime.now(TZ)
 
 DB_NAME = "barbershop.db"
@@ -88,8 +88,8 @@ def get_all_workers():
 
 def start_work_day(worker_id: int):
     conn = get_conn()
-    today = now().strftime("%Y-%m-%d")
-    now = now().strftime("%H:%M")
+    today = get_now().strftime("%Y-%m-%d")
+    now = get_now().strftime("%H:%M")
     existing = conn.execute(
         "SELECT * FROM work_days WHERE worker_id = ? AND date = ?", (worker_id, today)
     ).fetchone()
@@ -106,8 +106,8 @@ def start_work_day(worker_id: int):
 
 def end_work_day(worker_id: int):
     conn = get_conn()
-    today = now().strftime("%Y-%m-%d")
-    now = now().strftime("%H:%M")
+    today = get_now().strftime("%Y-%m-%d")
+    now = get_now().strftime("%H:%M")
     row = conn.execute(
         "SELECT * FROM work_days WHERE worker_id = ? AND date = ?", (worker_id, today)
     ).fetchone()
@@ -150,7 +150,7 @@ def set_holiday(date: str):
 
 def workers_not_started():
     conn = get_conn()
-    today = now().strftime("%Y-%m-%d")
+    today = get_now().strftime("%Y-%m-%d")
     started_ids = [
         r["worker_id"] for r in conn.execute(
             "SELECT worker_id FROM work_days WHERE date = ? AND start_time IS NOT NULL", (today,)
@@ -162,7 +162,7 @@ def workers_not_started():
 
 def workers_not_ended():
     conn = get_conn()
-    today = now().strftime("%Y-%m-%d")
+    today = get_now().strftime("%Y-%m-%d")
     rows = conn.execute(
         "SELECT w.* FROM workers w JOIN work_days wd ON w.id = wd.worker_id "
         "WHERE wd.date = ? AND wd.start_time IS NOT NULL AND wd.end_time IS NULL AND w.is_active = 1",
@@ -185,8 +185,8 @@ SERVICE_NAMES = [
 
 def add_service(worker_id: int, service_name: str, price: int):
     conn = get_conn()
-    today = now().strftime("%Y-%m-%d")
-    now = now().strftime("%Y-%m-%d %H:%M:%S")
+    today = get_now().strftime("%Y-%m-%d")
+    now = get_now().strftime("%Y-%m-%d %H:%M:%S")
     conn.execute(
         "INSERT INTO services (worker_id, date, service_name, price, created_at) VALUES (?, ?, ?, ?, ?)",
         (worker_id, today, service_name, price, now)
@@ -196,7 +196,7 @@ def add_service(worker_id: int, service_name: str, price: int):
 
 def delete_last_service(worker_id: int):
     conn = get_conn()
-    today = now().strftime("%Y-%m-%d")
+    today = get_now().strftime("%Y-%m-%d")
     row = conn.execute(
         "SELECT id FROM services WHERE worker_id = ? AND date = ? ORDER BY id DESC LIMIT 1",
         (worker_id, today)
@@ -255,7 +255,7 @@ def get_all_workers_summary_range(days: int):
 
 def get_today_summary_all():
     conn = get_conn()
-    today = now().strftime("%Y-%m-%d")
+    today = get_now().strftime("%Y-%m-%d")
     rows = conn.execute(
         "SELECT w.id, w.name, w.telegram_id, "
         "wd.start_time, wd.end_time, "
