@@ -50,7 +50,8 @@ def get_worker_keyboard():
         [KeyboardButton("✂️ Soch olish"), KeyboardButton("🚿 Soch yuvish")],
         [KeyboardButton("🪒 Soqol olish"), KeyboardButton("👰 Kiyov tayyorlash")],
         [KeyboardButton("💆 Yuz tozalash"), KeyboardButton("🎭 Maska")],
-        [KeyboardButton("🎨 Soch bo'yash"), KeyboardButton("📊 Hisobotim")],
+        [KeyboardButton("🎨 Soch bo'yash"), KeyboardButton("🔧 Boshqa xizmat")],
+        [KeyboardButton("📊 Hisobotim"), KeyboardButton("📈 Shaxsiy rekord")],
         [KeyboardButton("🌅 Kunni boshlash"), KeyboardButton("✅ Kunni yakunlash")],
         [KeyboardButton("🗑 Oxirgini o'chir"), KeyboardButton("👑 Admin panel")],
     ]
@@ -61,6 +62,8 @@ def get_admin_keyboard():
         [KeyboardButton("📊 Umumiy hisobot"), KeyboardButton("👥 Masterlar")],
         [KeyboardButton("➕ Xodim qo'shish"), KeyboardButton("❌ Xodim o'chirish")],
         [KeyboardButton("📅 Dam olish kuni belgilash"), KeyboardButton("🗓 Dam olishni bekor qilish")],
+        [KeyboardButton("🏆 Eng yaxshi master"), KeyboardButton("💸 Oylik maosh")],
+        [KeyboardButton("💬 Xodimga xabar"), KeyboardButton("📢 Hammaga xabar")],
     ]
     return ReplyKeyboardMarkup(kb, resize_keyboard=True)
 
@@ -257,6 +260,41 @@ async def handle_service(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await context.bot.send_sticker(chat_id=update.effective_chat.id, sticker=STICKER_LAUGH)
         return
 
+    # ── Boshqa xizmat ──
+    if text == "🔧 Boshqa xizmat":
+        if not work_day or not work_day["start_time"]:
+            await update.message.reply_text("⚠️ Avval '🌅 Kunni boshlash' ni bosing!")
+            return
+        if work_day and work_day.get("end_time"):
+            await update.message.reply_text("⚠️ Siz kunni yakunlagansiz!")
+            return
+        pending_service[user_id] = "🔧 boshqa_nom"
+        await update.message.reply_text("Xizmat nomini kiriting:")
+        return
+
+    # ── Shaxsiy rekord ──
+    if text == "📈 Shaxsiy rekord":
+        from database import get_conn, dict_row as _dr
+        conn = get_conn()
+        c = conn.cursor()
+        c.execute(
+            "SELECT date, SUM(price) as total FROM services WHERE worker_id = %s "
+            "GROUP BY date ORDER BY total DESC LIMIT 1",
+            (worker["id"],)
+        )
+        row = c.fetchone()
+        conn.close()
+        if row:
+            d = datetime.strptime(row[0], "%Y-%m-%d").strftime("%d.%m.%Y")
+            lines = [f"📈 {worker['name']} — Shaxsiy rekord"]
+            lines.append(f"📅 {d}")
+            lines.append(f"💰 {format_money(row[1])}")
+            lines.append(f"👤 Sizniki (70%): {format_money(int(row[1]*0.7))}")
+            await update.message.reply_text("\n".join(lines), reply_markup=get_worker_keyboard())
+        else:
+            await update.message.reply_text("Hali ma'lumot yo'q.", reply_markup=get_worker_keyboard())
+        return
+
     # ── Xizmat tanlash ──
     if text in SERVICE_NAMES:
         if not work_day or not work_day["start_time"]:
@@ -271,6 +309,13 @@ async def handle_service(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # ── Narx kiritish ──
     if user_id in pending_service:
+        service = pending_service[user_id]
+        # Boshqa xizmat - 1-qadam: nom kiritish
+        if service == "🔧 boshqa_nom":
+            pending_service[user_id] = f"🔧 {text.strip()}"
+            await update.message.reply_text(f"Narxni kiriting (so'm):")
+            return
+        # Narx kiritish
         try:
             price = int(text.replace(" ", "").replace(",", ""))
             service_name = pending_service.pop(user_id)
@@ -296,7 +341,8 @@ async def handle_admin_message(update: Update, context: ContextTypes.DEFAULT_TYP
     # ── Asosiy tugmalar har doim ishlaydi ──
     MAIN_BUTTONS = [
         "📊 Umumiy hisobot", "👥 Masterlar", "➕ Xodim qo'shish",
-        "❌ Xodim o'chirish", "📅 Dam olish kuni belgilash", "🗓 Dam olishni bekor qilish"
+        "❌ Xodim o'chirish", "📅 Dam olish kuni belgilash", "🗓 Dam olishni bekor qilish",
+        "🏆 Eng yaxshi master", "💸 Oylik maosh", "💬 Xodimga xabar", "📢 Hammaga xabar"
     ]
     if text in MAIN_BUTTONS:
         admin_state.pop(user_id, None)
@@ -347,6 +393,29 @@ async def handle_admin_message(update: Update, context: ContextTypes.DEFAULT_TYP
             )
         except:
             await update.message.reply_text("❌ Format: KK.OO.YYYY — masalan: 09.06.2025")
+        return
+
+    if state == "waiting_broadcast":
+        workers = get_all_workers()
+        sent = 0
+        for w in workers:
+            try:
+                await context.bot.send_message(chat_id=w["telegram_id"], text=f"📢 Admin xabari:\n\n{text}")
+                sent += 1
+            except:
+                pass
+        admin_state.pop(user_id)
+        await update.message.reply_text(f"✅ {sent} ta xodimga xabar yuborildi!", reply_markup=get_admin_keyboard())
+        return
+
+    if isinstance(state, dict) and state.get("step") == "waiting_msg_text":
+        tid = state["tid"]
+        try:
+            await context.bot.send_message(chat_id=tid, text=f"💬 Admin xabari:\n\n{text}")
+            admin_state.pop(user_id)
+            await update.message.reply_text("✅ Xabar yuborildi!", reply_markup=get_admin_keyboard())
+        except:
+            await update.message.reply_text("❌ Xabar yuborib bo'lmadi.")
         return
 
     if state == "waiting_remove_holiday":
@@ -420,6 +489,38 @@ async def handle_admin_message(update: Update, context: ContextTypes.DEFAULT_TYP
     if text == "🗓 Dam olishni bekor qilish":
         admin_state[user_id] = "waiting_remove_holiday"
         await update.message.reply_text("Bekor qilinadigan sanani kiriting (KK.OO.YYYY):\nMasalan: 09.06.2025")
+        return
+
+    if text == "🏆 Eng yaxshi master":
+        kb = InlineKeyboardMarkup([
+            [InlineKeyboardButton("Bu hafta", callback_data="top_7"),
+             InlineKeyboardButton("Bu oy", callback_data="top_30")],
+        ])
+        await update.message.reply_text("Qaysi davr?", reply_markup=kb)
+        return
+
+    if text == "💸 Oylik maosh":
+        workers = get_all_workers_summary_range(30)
+        lines = ["💸 Oylik maosh hisobi (30 kun)\n"]
+        for w in workers:
+            total = w["total"] or 0
+            w_share, _ = calc_percent(total)
+            lines.append(f"👤 {w['name']}: {format_money(w_share)}")
+        await update.message.reply_text("\n".join(lines), reply_markup=get_admin_keyboard())
+        return
+
+    if text == "💬 Xodimga xabar":
+        workers = get_all_workers()
+        if not workers:
+            await update.message.reply_text("Xodimlar yo'q.")
+            return
+        kb = [[InlineKeyboardButton(f"👤 {w['name']}", callback_data=f"msgto_{w['telegram_id']}")] for w in workers]
+        await update.message.reply_text("Kimga xabar yubormoqchisiz?", reply_markup=InlineKeyboardMarkup(kb))
+        return
+
+    if text == "📢 Hammaga xabar":
+        admin_state[user_id] = "waiting_broadcast"
+        await update.message.reply_text("Barcha xodimlarga yuboriladigan xabarni kiriting:")
         return
 
 # ─── CALLBACKS ───
@@ -544,27 +645,50 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
+    if data.startswith("top_"):
+        days = int(data.split("_")[1])
+        label = "haftalik" if days == 7 else "oylik"
+        workers = get_all_workers_summary_range(days)
+        if not workers:
+            await query.edit_message_text("Ma'lumot yo'q.")
+            return
+        lines = [f"🏆 Eng yaxshi master — {label}\n"]
+        for i, w in enumerate(workers, 1):
+            total = w["total"] or 0
+            medal = ["🥇", "🥈", "🥉"][i-1] if i <= 3 else f"{i}."
+            lines.append(f"{medal} {w['name']}: {format_money(total)}")
+        await query.edit_message_text("\n".join(lines))
+        return
+
+    if data.startswith("msgto_"):
+        tid = int(data.split("_")[1])
+        from database import get_conn, dict_row as _dr
+        conn = get_conn()
+        c = conn.cursor()
+        c.execute("SELECT name FROM workers WHERE telegram_id = %s", (tid,))
+        row = c.fetchone()
+        conn.close()
+        name = row[0] if row else "Xodim"
+        admin_id = query.from_user.id
+        admin_state[admin_id] = {"step": "waiting_msg_text", "tid": tid}
+        await query.edit_message_text(f"💬 {name} ga xabar kiriting:")
+        return
+
     if data.startswith("myreport_"):
         parts = data.split("_")
         worker_id = int(parts[1])
         days = int(parts[2])
 
-        from database import get_conn
-        conn = get_conn()
-        cur = conn.cursor()
-        cur.execute("SELECT * FROM workers WHERE id = %s", (worker_id,))
-        w = cur.fetchone()
-        conn.close()
-        if not w:
-            await query.edit_message_text("Xodim topilmadi.")
-            return
-        from database import dict_row as _dict_row
+        from database import get_conn, dict_row as _dict_row
         wconn = get_conn()
         wcur = wconn.cursor()
         wcur.execute("SELECT * FROM workers WHERE id = %s", (worker_id,))
         wrow = wcur.fetchone()
-        worker_data = _dict_row(wcur, wrow)
         wconn.close()
+        if not wrow:
+            await query.edit_message_text("Xodim topilmadi.")
+            return
+        worker_data = _dict_row(wcur, wrow)
 
         if days == 0:
             # Bugun
