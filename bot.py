@@ -14,7 +14,8 @@ from telegram.ext import (
 )
 from database import (
     init_db, get_worker, get_all_workers, add_worker, remove_worker,
-    start_work_day, end_work_day, get_work_day,
+    start_work_day, end_work_day, get_work_day, get_all_sessions,
+    allow_restart, get_next_session,
     add_service, delete_last_service, get_services_by_worker_date,
     get_services_by_worker_range, get_worker_summary_range,
     get_all_workers_summary_range, get_today_summary_all,
@@ -146,7 +147,16 @@ async def handle_service(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 reply_markup=get_worker_keyboard()
             )
         else:
-            await update.message.reply_text("⚠️ Siz bugun allaqachon ish kunini boshlagansiz.")
+            # Check if day was ended - suggest admin restart
+            today_check = get_now().strftime("%Y-%m-%d")
+            wd_check = get_work_day(worker["id"], today_check)
+            if wd_check and wd_check.get("end_time"):
+                await update.message.reply_text(
+                    "⚠️ Siz bugun kunni yakunlagansiz!\n\n"
+                    "Qayta boshlash uchun admindan ruxsat so'rang."
+                )
+            else:
+                await update.message.reply_text("⚠️ Siz bugun allaqachon ish kunini boshlagansiz.")
         return
 
     # ── Kunni yakunlash ──
@@ -518,6 +528,9 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.edit_message_text("Xodim topilmadi.")
             return
 
+        today = get_now().strftime("%Y-%m-%d")
+        wd = get_work_day(worker["id"], today)
+        
         kb = [
             [InlineKeyboardButton("1 kun", callback_data=f"wreport_{tid}_1"),
              InlineKeyboardButton("3 kun", callback_data=f"wreport_{tid}_3")],
@@ -525,10 +538,35 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
              InlineKeyboardButton("15 kun", callback_data=f"wreport_{tid}_15")],
             [InlineKeyboardButton("1 oy", callback_data=f"wreport_{tid}_30")],
         ]
+        
+        # Show restart button if worker ended their day
+        if wd and wd.get("end_time"):
+            kb.append([InlineKeyboardButton("🔄 Qayta boshlash ruxsati", callback_data=f"restart_{tid}")])
+        
         await query.edit_message_text(
             f"👤 {worker['name']} — davr tanlang:",
             reply_markup=InlineKeyboardMarkup(kb)
         )
+        return
+
+    if data.startswith("restart_"):
+        tid = int(data.split("_")[1])
+        worker = get_worker(tid)
+        if not worker:
+            await query.edit_message_text("Xodim topilmadi.")
+            return
+        session = allow_restart(worker["id"])
+        await query.edit_message_text(
+            f"✅ {worker['name']} ga qayta boshlash ruxsati berildi!\n"
+            f"🔄 {session}-session boshlandi."
+        )
+        try:
+            await context.bot.send_message(
+                chat_id=tid,
+                text=f"✅ Admin ruxsat berdi! Ish davom ettirishingiz mumkin.\n🕐 {get_now().strftime('%H:%M')} dan boshlanadi."
+            )
+        except:
+            pass
         return
 
     if data.startswith("wreport_"):
@@ -576,7 +614,19 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 if wd["end_time"]:
                     time_info += f" — {wd['end_time']}"
 
-            lines.append(f"📅 {d}{time_info}")
+            # Get sessions for this day
+            sessions = get_all_sessions(worker["id"], date_str)
+            session_info = ""
+            if len(sessions) > 1:
+                for s in sessions:
+                    if s.get("start_time"):
+                        end = s["end_time"] or "..."
+                        session_info += f"\n  🔄 {s['session']}-session: {s['start_time']} — {end}"
+            elif sessions and sessions[0].get("start_time"):
+                end = sessions[0]["end_time"] or "..."
+                session_info = f" | 🕐 {sessions[0]['start_time']} — {end}"
+
+            lines.append(f"📅 {d}{session_info}")
             for s in day_services:
                 lines.append(f"  {s['service_name']} × {s['cnt']} — {format_money(s['total'])}")
             w_share, o_share = calc_percent(day_total)
