@@ -47,23 +47,23 @@ def calc_percent(total):
 
 def get_worker_keyboard():
     kb = [
+        [KeyboardButton("🌅 Kunni boshlash"), KeyboardButton("✅ Kunni yakunlash")],
         [KeyboardButton("✂️ Soch olish"), KeyboardButton("🚿 Soch yuvish")],
         [KeyboardButton("🪒 Soqol olish"), KeyboardButton("👰 Kiyov tayyorlash")],
         [KeyboardButton("💆 Yuz tozalash"), KeyboardButton("🎭 Maska")],
         [KeyboardButton("🎨 Soch bo'yash"), KeyboardButton("🔧 Boshqa xizmat")],
-        [KeyboardButton("📊 Hisobotim"), KeyboardButton("📈 Shaxsiy rekord")],
-        [KeyboardButton("🌅 Kunni boshlash"), KeyboardButton("✅ Kunni yakunlash")],
-        [KeyboardButton("🗑 Oxirgini o'chir"), KeyboardButton("👑 Admin panel")],
+        [KeyboardButton("🗑 Oxirgini o'chir"), KeyboardButton("📊 Hisobotim")],
+        [KeyboardButton("📈 Shaxsiy rekord"), KeyboardButton("👑 Admin panel")],
     ]
     return ReplyKeyboardMarkup(kb, resize_keyboard=True)
 
 def get_admin_keyboard():
     kb = [
-        [KeyboardButton("📊 Umumiy hisobot"), KeyboardButton("👥 Masterlar")],
-        [KeyboardButton("➕ Xodim qo'shish"), KeyboardButton("❌ Xodim o'chirish")],
-        [KeyboardButton("📅 Dam olish kuni belgilash"), KeyboardButton("🗓 Dam olishni bekor qilish")],
+        [KeyboardButton("👥 Masterlar"), KeyboardButton("📊 Umumiy hisobot")],
         [KeyboardButton("🏆 Eng yaxshi master"), KeyboardButton("💸 Oylik maosh")],
         [KeyboardButton("💬 Xodimga xabar"), KeyboardButton("📢 Hammaga xabar")],
+        [KeyboardButton("📅 Dam olish kuni belgilash"), KeyboardButton("🗓 Dam olishni bekor qilish")],
+        [KeyboardButton("➕ Xodim qo'shish"), KeyboardButton("❌ Xodim o'chirish")],
     ]
     return ReplyKeyboardMarkup(kb, resize_keyboard=True)
 
