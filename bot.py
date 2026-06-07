@@ -5,7 +5,7 @@ from dotenv import load_dotenv
 
 TZ = timezone(timedelta(hours=5))
 
-def now():
+def get_now():
     return datetime.now(TZ)
 from telegram import Update, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import (
@@ -120,16 +120,16 @@ async def handle_service(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ Siz tizimda yo'qsiz.")
         return
 
-    today = now().strftime("%Y-%m-%d")
+    today = get_now().strftime("%Y-%m-%d")
     work_day = get_work_day(worker["id"], today)
 
     # ── Kunni boshlash ──
     if text == "🌅 Kunni boshlash":
         result = start_work_day(worker["id"])
         if result:
-            now = now().strftime("%H:%M")
+            current_time_str = get_now().strftime("%H:%M")
             await update.message.reply_text(
-                f"✅ Ish kuni boshlandi!\n🕐 Boshlash vaqti: {now}",
+                f"✅ Ish kuni boshlandi!\n🕐 Boshlash vaqti: {current_time_str}",
                 reply_markup=get_worker_keyboard()
             )
         else:
@@ -148,7 +148,7 @@ async def handle_service(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         services_check = get_services_by_worker_date(worker["id"], today)
         total_check = sum(s["total"] for s in services_check)
-        current_time = now().strftime("%H:%M")
+        current_time = get_now().strftime("%H:%M")
 
         kb = InlineKeyboardMarkup([
             [InlineKeyboardButton("✅ Ha, yakunla", callback_data=f"endday_{worker['id']}"),
@@ -171,7 +171,7 @@ async def handle_service(update: Update, context: ContextTypes.DEFAULT_TYPE):
         services = get_services_by_worker_date(worker["id"], today)
         total = sum(s["total"] for s in services)
         worker_share, owner_share = calc_percent(total)
-        now = now().strftime("%H:%M")
+        current_time_str = get_now().strftime("%H:%M")
 
         lines = [f"✅ {worker['name']} ish kunini yakunladi"]
         lines.append(f"🕐 {result['start']} — {result['end']}")
@@ -213,7 +213,7 @@ async def handle_service(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         work_day = get_work_day(worker["id"], today)
         lines = [f"📊 {worker['name']} — Bugungi hisobot"]
-        lines.append(f"📅 {now().strftime('%d.%m.%Y')}")
+        lines.append(f"📅 {get_now().strftime('%d.%m.%Y')}")
         if work_day and work_day["start_time"]:
             lines.append(f"🕐 Boshlash: {work_day['start_time']}")
         lines.append("")
@@ -267,7 +267,7 @@ async def handle_service(update: Update, context: ContextTypes.DEFAULT_TYPE):
             service_name = pending_service.pop(user_id)
             add_service(worker["id"], service_name, price)
             await update.message.reply_text(
-                f"✅ Saqlandi!\n{service_name} — {format_money(price)}\n📅 {now().strftime('%d.%m.%Y %H:%M')}",
+                f"✅ Saqlandi!\n{service_name} — {format_money(price)}\n📅 {get_now().strftime('%d.%m.%Y %H:%M')}",
                 reply_markup=get_worker_keyboard()
             )
         except ValueError:
@@ -384,7 +384,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.edit_message_text("⚠️ Xatolik yuz berdi.")
             return
 
-        today = now().strftime("%Y-%m-%d")
+        today = get_now().strftime("%Y-%m-%d")
         services = get_services_by_worker_date(worker_id, today)
         total = sum(s["total"] for s in services)
         worker_share, owner_share = calc_percent(total)
@@ -591,7 +591,7 @@ async def evening_admin_report(context: ContextTypes.DEFAULT_TYPE):
     total_all = sum(w["total"] or 0 for w in summary)
     _, owner_total = calc_percent(total_all)
 
-    today = now().strftime("%d.%m.%Y")
+    today = get_now().strftime("%d.%m.%Y")
     lines = [f"📊 Kun yakunlandi — {today}\n"]
 
     for w in summary:
@@ -600,7 +600,7 @@ async def evening_admin_report(context: ContextTypes.DEFAULT_TYPE):
         worker_id = w["id"]
 
         from database import get_services_by_worker_date
-        services = get_services_by_worker_date(worker_id, now().strftime("%Y-%m-%d"))
+        services = get_services_by_worker_date(worker_id, get_now().strftime("%Y-%m-%d"))
 
         time_info = ""
         if w["start_time"]:
