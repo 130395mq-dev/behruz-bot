@@ -1,4 +1,6 @@
-import sqlite3
+import os
+import psycopg2
+import psycopg2.extras
 from datetime import datetime, timezone, timedelta
 
 TZ = timezone(timedelta(hours=5))
@@ -6,11 +8,9 @@ TZ = timezone(timedelta(hours=5))
 def get_now():
     return datetime.now(TZ)
 
-DB_NAME = "barbershop.db"
-
 def get_conn():
-    conn = sqlite3.connect(DB_NAME)
-    conn.row_factory = sqlite3.Row
+    url = os.getenv("DATABASE_URL")
+    conn = psycopg2.connect(url)
     return conn
 
 def init_db():
@@ -19,8 +19,8 @@ def init_db():
 
     c.execute("""
         CREATE TABLE IF NOT EXISTS workers (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            telegram_id INTEGER UNIQUE NOT NULL,
+            id SERIAL PRIMARY KEY,
+            telegram_id BIGINT UNIQUE NOT NULL,
             name TEXT NOT NULL,
             is_active INTEGER DEFAULT 1
         )
@@ -28,7 +28,7 @@ def init_db():
 
     c.execute("""
         CREATE TABLE IF NOT EXISTS work_days (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             worker_id INTEGER NOT NULL,
             date TEXT NOT NULL,
             start_time TEXT,
@@ -40,7 +40,7 @@ def init_db():
 
     c.execute("""
         CREATE TABLE IF NOT EXISTS services (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             worker_id INTEGER NOT NULL,
             date TEXT NOT NULL,
             service_name TEXT NOT NULL,
@@ -53,53 +53,62 @@ def init_db():
     conn.commit()
     conn.close()
 
+def dict_row(cursor, row):
+    cols = [desc[0] for desc in cursor.description]
+    return dict(zip(cols, row))
+
 # --- WORKERS ---
 
 def add_worker(telegram_id: int, name: str):
     conn = get_conn()
     try:
-        conn.execute("INSERT INTO workers (telegram_id, name) VALUES (?, ?)", (telegram_id, name))
+        c = conn.cursor()
+        c.execute("INSERT INTO workers (telegram_id, name) VALUES (%s, %s)", (telegram_id, name))
         conn.commit()
         return True
-    except sqlite3.IntegrityError:
+    except psycopg2.IntegrityError:
         return False
     finally:
         conn.close()
 
 def remove_worker(telegram_id: int):
     conn = get_conn()
-    conn.execute("UPDATE workers SET is_active = 0 WHERE telegram_id = ?", (telegram_id,))
+    c = conn.cursor()
+    c.execute("UPDATE workers SET is_active = 0 WHERE telegram_id = %s", (telegram_id,))
     conn.commit()
     conn.close()
 
 def get_worker(telegram_id: int):
     conn = get_conn()
-    row = conn.execute("SELECT * FROM workers WHERE telegram_id = ? AND is_active = 1", (telegram_id,)).fetchone()
+    c = conn.cursor()
+    c.execute("SELECT * FROM workers WHERE telegram_id = %s AND is_active = 1", (telegram_id,))
+    row = c.fetchone()
+    result = dict_row(c, row) if row else None
     conn.close()
-    return row
+    return result
 
 def get_all_workers():
     conn = get_conn()
-    rows = conn.execute("SELECT * FROM workers WHERE is_active = 1").fetchall()
+    c = conn.cursor()
+    c.execute("SELECT * FROM workers WHERE is_active = 1")
+    rows = c.fetchall()
+    result = [dict_row(c, r) for r in rows]
     conn.close()
-    return rows
+    return result
 
 # --- WORK DAYS ---
 
 def start_work_day(worker_id: int):
     conn = get_conn()
     today = get_now().strftime("%Y-%m-%d")
-    now = get_now().strftime("%H:%M")
-    existing = conn.execute(
-        "SELECT * FROM work_days WHERE worker_id = ? AND date = ?", (worker_id, today)
-    ).fetchone()
+    now_time = get_now().strftime("%H:%M")
+    c = conn.cursor()
+    c.execute("SELECT * FROM work_days WHERE worker_id = %s AND date = %s", (worker_id, today))
+    existing = c.fetchone()
     if existing:
         conn.close()
         return False
-    conn.execute(
-        "INSERT INTO work_days (worker_id, date, start_time) VALUES (?, ?, ?)",
-        (worker_id, today, now)
-    )
+    c.execute("INSERT INTO work_days (worker_id, date, start_time) VALUES (%s, %s, %s)", (worker_id, today, now_time))
     conn.commit()
     conn.close()
     return True
@@ -107,69 +116,73 @@ def start_work_day(worker_id: int):
 def end_work_day(worker_id: int):
     conn = get_conn()
     today = get_now().strftime("%Y-%m-%d")
-    now = get_now().strftime("%H:%M")
-    row = conn.execute(
-        "SELECT * FROM work_days WHERE worker_id = ? AND date = ?", (worker_id, today)
-    ).fetchone()
+    now_time = get_now().strftime("%H:%M")
+    c = conn.cursor()
+    c.execute("SELECT * FROM work_days WHERE worker_id = %s AND date = %s", (worker_id, today))
+    row = c.fetchone()
     if not row:
         conn.close()
         return None
+    row = dict_row(c, row)
     if row["end_time"]:
         conn.close()
         return None
-    conn.execute(
-        "UPDATE work_days SET end_time = ? WHERE worker_id = ? AND date = ?",
-        (now, worker_id, today)
-    )
+    c.execute("UPDATE work_days SET end_time = %s WHERE worker_id = %s AND date = %s", (now_time, worker_id, today))
     conn.commit()
     conn.close()
-    return {"start": row["start_time"], "end": now}
+    return {"start": row["start_time"], "end": now_time}
 
 def get_work_day(worker_id: int, date: str):
     conn = get_conn()
-    row = conn.execute(
-        "SELECT * FROM work_days WHERE worker_id = ? AND date = ?", (worker_id, date)
-    ).fetchone()
+    c = conn.cursor()
+    c.execute("SELECT * FROM work_days WHERE worker_id = %s AND date = %s", (worker_id, date))
+    row = c.fetchone()
+    result = dict_row(c, row) if row else None
     conn.close()
-    return row
+    return result
 
 def set_holiday(date: str):
     conn = get_conn()
-    workers = conn.execute("SELECT id FROM workers WHERE is_active = 1").fetchall()
+    c = conn.cursor()
+    c.execute("SELECT id FROM workers WHERE is_active = 1")
+    workers = c.fetchall()
     for w in workers:
-        existing = conn.execute(
-            "SELECT * FROM work_days WHERE worker_id = ? AND date = ?", (w["id"], date)
-        ).fetchone()
-        if not existing:
-            conn.execute(
-                "INSERT INTO work_days (worker_id, date, is_holiday) VALUES (?, ?, 1)",
-                (w["id"], date)
-            )
+        c.execute("SELECT * FROM work_days WHERE worker_id = %s AND date = %s", (w[0], date))
+        if not c.fetchone():
+            c.execute("INSERT INTO work_days (worker_id, date, is_holiday) VALUES (%s, %s, 1)", (w[0], date))
     conn.commit()
     conn.close()
 
 def workers_not_started():
     conn = get_conn()
     today = get_now().strftime("%Y-%m-%d")
-    started_ids = [
-        r["worker_id"] for r in conn.execute(
-            "SELECT worker_id FROM work_days WHERE date = ? AND start_time IS NOT NULL", (today,)
-        ).fetchall()
-    ]
-    all_workers = conn.execute("SELECT * FROM workers WHERE is_active = 1").fetchall()
+    c = conn.cursor()
+    c.execute("SELECT worker_id FROM work_days WHERE date = %s AND start_time IS NOT NULL", (today,))
+    started_ids = [r[0] for r in c.fetchall()]
+    c.execute("SELECT * FROM workers WHERE is_active = 1")
+    rows = c.fetchall()
+    all_workers = [dict_row(c, r) for r in rows]
     conn.close()
     return [w for w in all_workers if w["id"] not in started_ids]
 
 def workers_not_ended():
     conn = get_conn()
     today = get_now().strftime("%Y-%m-%d")
-    rows = conn.execute(
+    c = conn.cursor()
+    c.execute(
         "SELECT w.* FROM workers w JOIN work_days wd ON w.id = wd.worker_id "
-        "WHERE wd.date = ? AND wd.start_time IS NOT NULL AND wd.end_time IS NULL AND w.is_active = 1",
+        "WHERE wd.date = %s AND wd.start_time IS NOT NULL AND wd.end_time IS NULL AND w.is_active = 1",
         (today,)
-    ).fetchall()
+    )
+    rows = c.fetchall()
+    result = [dict_row(c, r) for r in rows]
     conn.close()
-    return rows
+    return result
+
+def get_conn():
+    url = os.getenv("DATABASE_URL")
+    conn = psycopg2.connect(url)
+    return conn
 
 # --- SERVICES ---
 
@@ -186,10 +199,11 @@ SERVICE_NAMES = [
 def add_service(worker_id: int, service_name: str, price: int):
     conn = get_conn()
     today = get_now().strftime("%Y-%m-%d")
-    now = get_now().strftime("%Y-%m-%d %H:%M:%S")
-    conn.execute(
-        "INSERT INTO services (worker_id, date, service_name, price, created_at) VALUES (?, ?, ?, ?, ?)",
-        (worker_id, today, service_name, price, now)
+    now_str = get_now().strftime("%Y-%m-%d %H:%M:%S")
+    c = conn.cursor()
+    c.execute(
+        "INSERT INTO services (worker_id, date, service_name, price, created_at) VALUES (%s, %s, %s, %s, %s)",
+        (worker_id, today, service_name, price, now_str)
     )
     conn.commit()
     conn.close()
@@ -197,12 +211,11 @@ def add_service(worker_id: int, service_name: str, price: int):
 def delete_last_service(worker_id: int):
     conn = get_conn()
     today = get_now().strftime("%Y-%m-%d")
-    row = conn.execute(
-        "SELECT id FROM services WHERE worker_id = ? AND date = ? ORDER BY id DESC LIMIT 1",
-        (worker_id, today)
-    ).fetchone()
+    c = conn.cursor()
+    c.execute("SELECT id FROM services WHERE worker_id = %s AND date = %s ORDER BY id DESC LIMIT 1", (worker_id, today))
+    row = c.fetchone()
     if row:
-        conn.execute("DELETE FROM services WHERE id = ?", (row["id"],))
+        c.execute("DELETE FROM services WHERE id = %s", (row[0],))
         conn.commit()
         conn.close()
         return True
@@ -211,60 +224,75 @@ def delete_last_service(worker_id: int):
 
 def get_services_by_worker_date(worker_id: int, date: str):
     conn = get_conn()
-    rows = conn.execute(
+    c = conn.cursor()
+    c.execute(
         "SELECT service_name, COUNT(*) as cnt, SUM(price) as total "
-        "FROM services WHERE worker_id = ? AND date = ? GROUP BY service_name",
+        "FROM services WHERE worker_id = %s AND date = %s GROUP BY service_name",
         (worker_id, date)
-    ).fetchall()
+    )
+    rows = c.fetchall()
+    result = [dict_row(c, r) for r in rows]
     conn.close()
-    return rows
+    return result
 
 def get_services_by_worker_range(worker_id: int, days: int):
     conn = get_conn()
-    rows = conn.execute(
+    c = conn.cursor()
+    c.execute(
         "SELECT date, service_name, COUNT(*) as cnt, SUM(price) as total "
-        "FROM services WHERE worker_id = ? "
-        "AND date >= date('now', ? || ' days') "
+        "FROM services WHERE worker_id = %s "
+        "AND date >= (CURRENT_DATE - INTERVAL '%s days')::text "
         "GROUP BY date, service_name ORDER BY date DESC",
-        (worker_id, f"-{days-1}")
-    ).fetchall()
+        (worker_id, days - 1)
+    )
+    rows = c.fetchall()
+    result = [dict_row(c, r) for r in rows]
     conn.close()
-    return rows
+    return result
 
 def get_worker_summary_range(worker_id: int, days: int):
     conn = get_conn()
-    rows = conn.execute(
-        "SELECT date, SUM(price) as total FROM services WHERE worker_id = ? "
-        "AND date >= date('now', ? || ' days') GROUP BY date ORDER BY date DESC",
-        (worker_id, f"-{days-1}")
-    ).fetchall()
+    c = conn.cursor()
+    c.execute(
+        "SELECT date, SUM(price) as total FROM services WHERE worker_id = %s "
+        "AND date >= (CURRENT_DATE - INTERVAL '%s days')::text GROUP BY date ORDER BY date DESC",
+        (worker_id, days - 1)
+    )
+    rows = c.fetchall()
+    result = [dict_row(c, r) for r in rows]
     conn.close()
-    return rows
+    return result
 
 def get_all_workers_summary_range(days: int):
     conn = get_conn()
-    rows = conn.execute(
-        "SELECT w.id, w.name, w.telegram_id, SUM(s.price) as total "
+    c = conn.cursor()
+    c.execute(
+        "SELECT w.id, w.name, w.telegram_id, COALESCE(SUM(s.price), 0) as total "
         "FROM workers w LEFT JOIN services s ON w.id = s.worker_id "
-        "AND s.date >= date('now', ? || ' days') "
-        "WHERE w.is_active = 1 GROUP BY w.id ORDER BY total DESC",
-        (f"-{days-1}",)
-    ).fetchall()
+        "AND s.date >= (CURRENT_DATE - INTERVAL '%s days')::text "
+        "WHERE w.is_active = 1 GROUP BY w.id, w.name, w.telegram_id ORDER BY total DESC",
+        (days - 1,)
+    )
+    rows = c.fetchall()
+    result = [dict_row(c, r) for r in rows]
     conn.close()
-    return rows
+    return result
 
 def get_today_summary_all():
     conn = get_conn()
     today = get_now().strftime("%Y-%m-%d")
-    rows = conn.execute(
+    c = conn.cursor()
+    c.execute(
         "SELECT w.id, w.name, w.telegram_id, "
         "wd.start_time, wd.end_time, "
         "COALESCE(SUM(s.price), 0) as total "
         "FROM workers w "
-        "LEFT JOIN work_days wd ON w.id = wd.worker_id AND wd.date = ? "
-        "LEFT JOIN services s ON w.id = s.worker_id AND s.date = ? "
-        "WHERE w.is_active = 1 GROUP BY w.id",
+        "LEFT JOIN work_days wd ON w.id = wd.worker_id AND wd.date = %s "
+        "LEFT JOIN services s ON w.id = s.worker_id AND s.date = %s "
+        "WHERE w.is_active = 1 GROUP BY w.id, w.name, w.telegram_id, wd.start_time, wd.end_time",
         (today, today)
-    ).fetchall()
+    )
+    rows = c.fetchall()
+    result = [dict_row(c, r) for r in rows]
     conn.close()
-    return rows
+    return result
