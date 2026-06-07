@@ -148,7 +148,7 @@ def end_work_day(worker_id: int):
     today = get_now().strftime("%Y-%m-%d")
     now_time = get_now().strftime("%H:%M")
     c = conn.cursor()
-    c.execute("SELECT * FROM work_days WHERE worker_id = %s AND date = %s", (worker_id, today))
+    c.execute("SELECT * FROM work_days WHERE worker_id = %s AND date = %s ORDER BY session DESC LIMIT 1", (worker_id, today))
     row = c.fetchone()
     if not row:
         conn.close()
@@ -157,7 +157,8 @@ def end_work_day(worker_id: int):
     if row["end_time"]:
         conn.close()
         return None
-    c.execute("UPDATE work_days SET end_time = %s WHERE worker_id = %s AND date = %s", (now_time, worker_id, today))
+    c.execute("UPDATE work_days SET end_time = %s WHERE worker_id = %s AND date = %s AND session = %s", 
+              (now_time, worker_id, today, row["session"]))
     conn.commit()
     conn.close()
     return {"start": row["start_time"], "end": now_time}
