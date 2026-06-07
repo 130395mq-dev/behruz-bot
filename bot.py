@@ -290,8 +290,7 @@ async def handle_service(update: Update, context: ContextTypes.DEFAULT_TYPE):
             try:
                 today_str = get_now().strftime("%Y-%m-%d")
                 tomorrow_str = (get_now() + timedelta(days=1)).strftime("%Y-%m-%d")
-                BOT_START_DATE = "2026-06-08"
-                if len(text.strip()) == 7 and text.strip()[2] == ".":
+                    if len(text.strip()) == 7 and text.strip()[2] == ".":
                     month, year = text.strip().split(".")
                     from calendar import monthrange
                     days_in_month = monthrange(int(year), int(month))[1]
@@ -303,9 +302,6 @@ async def handle_service(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     date_to = None
                 if date_from >= tomorrow_str:
                     await update.message.reply_text("❌ Kelajak sanani kiritib bo'lmaydi!")
-                    return
-                if date_from < BOT_START_DATE:
-                    await update.message.reply_text("❌ Bot 08.06.2026 dan ishlaydi!")
                     return
                 admin_state[user_id] = {**user_state, "step": "waiting_date_to", "date_from": date_from}
                 if date_to:
@@ -518,7 +514,6 @@ async def handle_admin_message(update: Update, context: ContextTypes.DEFAULT_TYP
         try:
             today_str = get_now().strftime("%Y-%m-%d")
             tomorrow_str = (get_now() + timedelta(days=1)).strftime("%Y-%m-%d")
-            BOT_START_DATE = "2026-06-08"
 
             if len(text.strip()) == 7 and text.strip()[2] == ".":
                 month, year = text.strip().split(".")
@@ -533,9 +528,6 @@ async def handle_admin_message(update: Update, context: ContextTypes.DEFAULT_TYP
 
             if date_from >= tomorrow_str:
                 await update.message.reply_text("❌ Kelajak sanani kiritib bo'lmaydi!")
-                return
-            if date_from < BOT_START_DATE:
-                await update.message.reply_text(f"❌ Bot {BOT_START_DATE[8:]}.{BOT_START_DATE[5:7]}.{BOT_START_DATE[:4]} dan ishlaydi!")
                 return
 
             admin_state[user_id] = {**state, "step": "waiting_date_to", "date_from": date_from}
