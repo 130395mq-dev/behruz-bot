@@ -572,6 +572,17 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ─── SCHEDULED JOBS ───
 
+async def auto_close_days(context: ContextTypes.DEFAULT_TYPE):
+    from database import get_conn
+    yesterday = (get_now() - timedelta(days=1)).strftime("%Y-%m-%d")
+    conn = get_conn()
+    conn.execute(
+        "UPDATE work_days SET end_time = '23:59' WHERE date = ? AND start_time IS NOT NULL AND end_time IS NULL",
+        (yesterday,)
+    )
+    conn.commit()
+    conn.close()
+
 async def morning_greeting(context: ContextTypes.DEFAULT_TYPE):
     workers = get_all_workers()
     for w in workers:
@@ -668,6 +679,7 @@ def main():
     app.add_handler(CallbackQueryHandler(callback_handler))
 
     jq = app.job_queue
+    jq.run_daily(auto_close_days, time=datetime.strptime("00:01", "%H:%M").time())
     jq.run_daily(morning_greeting, time=datetime.strptime("09:00", "%H:%M").time())
     jq.run_daily(reminder_not_started, time=datetime.strptime("10:00", "%H:%M").time())
     jq.run_daily(reminder_not_ended, time=datetime.strptime("20:00", "%H:%M").time())
