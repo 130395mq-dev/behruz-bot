@@ -307,6 +307,15 @@ async def handle_admin_message(update: Update, context: ContextTypes.DEFAULT_TYP
 
     state = admin_state.get(user_id)
 
+    # ── Asosiy tugmalar har doim ishlaydi ──
+    MAIN_BUTTONS = [
+        "📊 Umumiy hisobot", "👥 Masterlar", "➕ Xodim qo'shish",
+        "❌ Xodim o'chirish", "📅 Dam olish kuni belgilash", "🗓 Dam olishni bekor qilish"
+    ]
+    if text in MAIN_BUTTONS:
+        admin_state.pop(user_id, None)
+        state = None
+
     # ── Xodim qo'shish jarayoni ──
     if state == "waiting_worker_id":
         try:
