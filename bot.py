@@ -45,6 +45,13 @@ def calc_percent(total):
     owner = int(total * 0.3)
     return worker, owner
 
+async def reply_clean(update, text, reply_markup=None):
+    try:
+        await update.message.delete()
+    except:
+        pass
+    return await reply_clean(update, text, reply_markup=reply_markup)
+
 def get_worker_keyboard():
     kb = [
         [KeyboardButton("🌅 Kunni boshlash"), KeyboardButton("✅ Kunni yakunlash")],
@@ -84,7 +91,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
 
     if is_admin(user_id):
-        await update.message.reply_text(
+        await reply_clean(update, 
             "👑 Xush kelibsiz, Behruz aka!\nSoqqani bosaylik! 💈",
             reply_markup=get_admin_keyboard()
         )
@@ -92,12 +99,12 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     worker = get_worker(user_id)
     if worker:
-        await update.message.reply_text(
+        await reply_clean(update, 
             f"Salom, {worker['name']}! 💈\nBugun ham zo'r ish qiling!",
             reply_markup=get_worker_keyboard()
         )
     else:
-        await update.message.reply_text(
+        await reply_clean(update, 
             "❌ Siz tizimda ro'yxatdan o'tmagansiz.\nAdmin bilan bog'laning."
         )
         try:
@@ -124,7 +131,7 @@ async def handle_service(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     worker = get_worker(user_id)
     if not worker:
-        await update.message.reply_text("❌ Siz tizimda yo'qsiz.")
+        await reply_clean(update, "❌ Siz tizimda yo'qsiz.")
         return
 
     today = get_now().strftime("%Y-%m-%d")
@@ -143,12 +150,12 @@ async def handle_service(update: Update, context: ContextTypes.DEFAULT_TYPE):
         holiday = c.fetchone()
         conn.close()
         if holiday:
-            await update.message.reply_text("🎉 Bugun dam olish kuni! Hordiq oling 😊")
+            await reply_clean(update, "🎉 Bugun dam olish kuni! Hordiq oling 😊")
             return
         result = start_work_day(worker["id"])
         if result:
             current_time_str = get_now().strftime("%H:%M")
-            await update.message.reply_text(
+            await reply_clean(update, 
                 f"✅ Ish kuni boshlandi!\n🕐 Boshlash vaqti: {current_time_str}",
                 reply_markup=get_worker_keyboard()
             )
@@ -157,22 +164,22 @@ async def handle_service(update: Update, context: ContextTypes.DEFAULT_TYPE):
             today_check = get_now().strftime("%Y-%m-%d")
             wd_check = get_work_day(worker["id"], today_check)
             if wd_check and wd_check.get("end_time"):
-                await update.message.reply_text(
+                await reply_clean(update, 
                     "⚠️ Siz bugun kunni yakunlagansiz!\n\n"
                     "Qayta boshlash uchun admindan ruxsat so'rang."
                 )
             else:
-                await update.message.reply_text("⚠️ Siz bugun allaqachon ish kunini boshlagansiz.")
+                await reply_clean(update, "⚠️ Siz bugun allaqachon ish kunini boshlagansiz.")
         return
 
     # ── Kunni yakunlash ──
     if text == "✅ Kunni yakunlash":
         work_day_check = get_work_day(worker["id"], today)
         if not work_day_check or not work_day_check["start_time"]:
-            await update.message.reply_text("⚠️ Avval kunni boshlang!")
+            await reply_clean(update, "⚠️ Avval kunni boshlang!")
             return
         if work_day_check["end_time"]:
-            await update.message.reply_text("⚠️ Kun allaqachon yakunlangan.")
+            await reply_clean(update, "⚠️ Kun allaqachon yakunlangan.")
             return
 
         services_check = get_services_by_worker_date(worker["id"], today)
@@ -183,7 +190,7 @@ async def handle_service(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [InlineKeyboardButton("✅ Ha, yakunla", callback_data=f"endday_{worker['id']}"),
              InlineKeyboardButton("❌ Yo'q", callback_data="endday_cancel")]
         ])
-        await update.message.reply_text(
+        await reply_clean(update, 
             f"⚠️ Kunni yakunlamoqchimisiz?\n\n"
             f"🕐 Hozirgi vaqt: {current_time}\n"
             f"💰 Bugungi jami: {format_money(total_check)}",
@@ -194,7 +201,7 @@ async def handle_service(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if False:  # placeholder — real end handled in callback
         result = end_work_day(worker["id"])
         if not result:
-            await update.message.reply_text("⚠️ Avval kunni boshlang yoki allaqachon yakunlangan.")
+            await reply_clean(update, "⚠️ Avval kunni boshlang yoki allaqachon yakunlangan.")
             return
 
         services = get_services_by_worker_date(worker["id"], today)
@@ -226,7 +233,7 @@ async def handle_service(update: Update, context: ContextTypes.DEFAULT_TYPE):
         lines.append(f"👑 Egasiga (30%): {format_money(owner_share)}")
 
         msg = "\n".join(lines)
-        await update.message.reply_text(msg, reply_markup=get_worker_keyboard())
+        await reply_clean(update, msg, reply_markup=get_worker_keyboard())
 
         try:
             await context.bot.send_message(chat_id=ADMIN_ID, text=f"🔔 {msg}")
@@ -244,7 +251,7 @@ async def handle_service(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [InlineKeyboardButton("1 oylik", callback_data=f"myreport_{worker['id']}_30"),
              InlineKeyboardButton("📅 Aniq sana", callback_data=f"myreport_{worker['id']}_custom")],
         ])
-        await update.message.reply_text("Qaysi hisobotni ko'rmoqchisiz?", reply_markup=kb)
+        await reply_clean(update, "Qaysi hisobotni ko'rmoqchisiz?", reply_markup=kb)
         return
 
     # ── Oxirgini o'chir ──
@@ -260,7 +267,7 @@ async def handle_service(update: Update, context: ContextTypes.DEFAULT_TYPE):
         rows = c.fetchall()
         conn.close()
         if not rows:
-            await update.message.reply_text("⚠️ Bugun hali xizmat kiritilmagan.", reply_markup=get_worker_keyboard())
+            await reply_clean(update, "⚠️ Bugun hali xizmat kiritilmagan.", reply_markup=get_worker_keyboard())
             return
         kb = []
         for row in rows:
@@ -271,7 +278,7 @@ async def handle_service(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 callback_data=f"delservice_{sid}_{worker['id']}"
             )])
         kb.append([InlineKeyboardButton("❌ Bekor qilish", callback_data="delservice_cancel")])
-        await update.message.reply_text(
+        await reply_clean(update, 
             "Qaysi yozuvni o'chirmoqchisiz?",
             reply_markup=InlineKeyboardMarkup(kb)
         )
@@ -279,7 +286,7 @@ async def handle_service(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # ── Admin panel (xodim bosadi) ──
     if text == "👑 Admin panel":
-        await update.message.reply_text(
+        await reply_clean(update, 
             "👑 Bu bo'lim faqat Behruz aka uchun!\nSiz esa master! 😄"
         )
         await context.bot.send_sticker(chat_id=update.effective_chat.id, sticker=STICKER_LAUGH)
@@ -287,7 +294,7 @@ async def handle_service(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # ── Yo'riqnoma (xodim) ──
     if text == "📖 Yo'riqnoma":
-        await update.message.reply_text(
+        await reply_clean(update, 
             "📖 Botdan foydalanish yo'riqnomasi\n\n"
             "🌅 Kunni boshlash — Ishni boshlaganingizda bosing\n"
             "✅ Kunni yakunlash — Ishni tugatganingizda bosing\n\n"
@@ -322,16 +329,16 @@ async def handle_service(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     date_from = d.strftime("%Y-%m-%d")
                     date_to = None
                 if date_from >= tomorrow_str:
-                    await update.message.reply_text("❌ Kelajak sanani kiritib bo'lmaydi!")
+                    await reply_clean(update, "❌ Kelajak sanani kiritib bo'lmaydi!")
                     return
                 admin_state[user_id] = {**user_state, "step": "waiting_date_to", "date_from": date_from}
                 if date_to:
                     await generate_custom_report(update, context, user_state, date_from, date_to)
                     admin_state.pop(user_id)
                 else:
-                    await update.message.reply_text("Tugash sanasini kiriting (KK.OO.YYYY):\nMasalan: 18.06.2026")
+                    await reply_clean(update, "Tugash sanasini kiriting (KK.OO.YYYY):\nMasalan: 18.06.2026")
             except:
-                await update.message.reply_text("❌ Format xato! OO.YYYY yoki KK.OO.YYYY kiriting")
+                await reply_clean(update, "❌ Format xato! OO.YYYY yoki KK.OO.YYYY kiriting")
             return
 
         if user_state.get("step") == "waiting_date_to":
@@ -341,32 +348,32 @@ async def handle_service(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 try:
                     d = datetime.strptime(text.strip(), "%d.%m.%Y")
                 except ValueError:
-                    await update.message.reply_text("❌ Format xato! KK.OO.YYYY kiriting\nMasalan: 18.06.2026")
+                    await reply_clean(update, "❌ Format xato! KK.OO.YYYY kiriting\nMasalan: 18.06.2026")
                     return
                 date_to = d.strftime("%Y-%m-%d")
                 date_from = user_state["date_from"]
                 if date_to >= tomorrow_str:
-                    await update.message.reply_text("❌ Kelajak sanani kiritib bo'lmaydi!")
+                    await reply_clean(update, "❌ Kelajak sanani kiritib bo'lmaydi!")
                     return
                 if date_to < date_from:
-                    await update.message.reply_text("❌ Tugash sanasi boshlanish sanasidan kichik bo'lmasin!")
+                    await reply_clean(update, "❌ Tugash sanasi boshlanish sanasidan kichik bo'lmasin!")
                     return
                 await generate_custom_report(update, context, user_state, date_from, date_to)
                 admin_state.pop(user_id)
             except Exception as e:
-                await update.message.reply_text("❌ Xatolik yuz berdi. Qayta urinib ko'ring.")
+                await reply_clean(update, "❌ Xatolik yuz berdi. Qayta urinib ko'ring.")
             return
 
     # ── Boshqa xizmat ──
     if text == "🔧 Boshqa xizmat":
         if not work_day or not work_day["start_time"]:
-            await update.message.reply_text("⚠️ Avval '🌅 Kunni boshlash' ni bosing!")
+            await reply_clean(update, "⚠️ Avval '🌅 Kunni boshlash' ni bosing!")
             return
         if work_day and work_day.get("end_time"):
-            await update.message.reply_text("⚠️ Siz kunni yakunlagansiz!")
+            await reply_clean(update, "⚠️ Siz kunni yakunlagansiz!")
             return
         pending_service[user_id] = "🔧 boshqa_nom"
-        await update.message.reply_text("Xizmat nomini kiriting:")
+        await reply_clean(update, "Xizmat nomini kiriting:")
         return
 
     # ── Shaxsiy rekord ──
@@ -387,21 +394,21 @@ async def handle_service(update: Update, context: ContextTypes.DEFAULT_TYPE):
             lines.append(f"📅 {d}")
             lines.append(f"💰 {format_money(row[1])}")
             lines.append(f"👤 Sizniki (70%): {format_money(int(row[1]*0.7))}")
-            await update.message.reply_text("\n".join(lines), reply_markup=get_worker_keyboard())
+            await reply_clean(update, "\n".join(lines), reply_markup=get_worker_keyboard())
         else:
-            await update.message.reply_text("Hali ma'lumot yo'q.", reply_markup=get_worker_keyboard())
+            await reply_clean(update, "Hali ma'lumot yo'q.", reply_markup=get_worker_keyboard())
         return
 
     # ── Xizmat tanlash ──
     if text in SERVICE_NAMES:
         if not work_day or not work_day["start_time"]:
-            await update.message.reply_text("⚠️ Avval '🌅 Kunni boshlash' ni bosing!")
+            await reply_clean(update, "⚠️ Avval '🌅 Kunni boshlash' ni bosing!")
             return
         if work_day and work_day["end_time"]:
-            await update.message.reply_text("⚠️ Siz kunni yakunlagansiz! Yangi kun uchun '🌅 Kunni boshlash' ni bosing.")
+            await reply_clean(update, "⚠️ Siz kunni yakunlagansiz! Yangi kun uchun '🌅 Kunni boshlash' ni bosing.")
             return
         pending_service[user_id] = text
-        await update.message.reply_text(f"{text} uchun narxni kiriting (so'm):")
+        await reply_clean(update, f"{text} uchun narxni kiriting (so'm):")
         return
 
     # ── Narx kiritish ──
@@ -410,19 +417,19 @@ async def handle_service(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Boshqa xizmat - 1-qadam: nom kiritish
         if service == "🔧 boshqa_nom":
             pending_service[user_id] = f"🔧 {text.strip()}"
-            await update.message.reply_text(f"Narxni kiriting (so'm):")
+            await reply_clean(update, f"Narxni kiriting (so'm):")
             return
         # Narx kiritish
         try:
             price = int(text.replace(" ", "").replace(",", ""))
             service_name = pending_service.pop(user_id)
             add_service(worker["id"], service_name, price)
-            await update.message.reply_text(
+            await reply_clean(update, 
                 f"✅ Saqlandi!\n{service_name} — {format_money(price)}\n📅 {get_now().strftime('%d.%m.%Y %H:%M')}",
                 reply_markup=get_worker_keyboard()
             )
         except ValueError:
-            await update.message.reply_text("❌ Faqat raqam kiriting! Masalan: 70000")
+            await reply_clean(update, "❌ Faqat raqam kiriting! Masalan: 70000")
         return
 
 # ─── ADMIN HANDLERS ───
@@ -449,7 +456,7 @@ async def generate_custom_report(update, context, state, date_from, date_to):
             name, total = row
             w_share, o_share = calc_percent(total)
             lines = [f"👤 {name} — {label}", f"💰 Jami: {format_money(total)}", f"👤 Sizniki (70%): {format_money(w_share)}"]
-            await update.message.reply_text("\n".join(lines), reply_markup=get_worker_keyboard())
+            await reply_clean(update, "\n".join(lines), reply_markup=get_worker_keyboard())
     else:
         c.execute(
             "SELECT w.name, COALESCE(SUM(s.price),0) as total FROM workers w "
@@ -470,7 +477,7 @@ async def generate_custom_report(update, context, state, date_from, date_to):
         lines.append("─" * 25)
         lines.append(f"💰 Umumiy: {format_money(total_all)}")
         lines.append(f"👑 Egasiga: {format_money(owner_total)}")
-        await update.message.reply_text("\n".join(lines), reply_markup=get_admin_keyboard())
+        await reply_clean(update, "\n".join(lines), reply_markup=get_admin_keyboard())
 
 async def handle_admin_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -494,9 +501,9 @@ async def handle_admin_message(update: Update, context: ContextTypes.DEFAULT_TYP
         try:
             tid = int(text.strip())
             admin_state[user_id] = {"step": "waiting_name", "tid": tid}
-            await update.message.reply_text("Xodimning ismini kiriting:")
+            await reply_clean(update, "Xodimning ismini kiriting:")
         except:
-            await update.message.reply_text("❌ Faqat Telegram ID (raqam) kiriting!")
+            await reply_clean(update, "❌ Faqat Telegram ID (raqam) kiriting!")
         return
 
     if isinstance(state, dict) and state.get("step") == "waiting_name":
@@ -505,12 +512,12 @@ async def handle_admin_message(update: Update, context: ContextTypes.DEFAULT_TYP
         result = add_worker(tid, name)
         admin_state.pop(user_id)
         if result:
-            await update.message.reply_text(
+            await reply_clean(update, 
                 f"✅ {name} qo'shildi!\nTelegram ID: {tid}",
                 reply_markup=get_admin_keyboard()
             )
         else:
-            await update.message.reply_text("⚠️ Bu ID allaqachon mavjud.", reply_markup=get_admin_keyboard())
+            await reply_clean(update, "⚠️ Bu ID allaqachon mavjud.", reply_markup=get_admin_keyboard())
         return
 
     if state == "waiting_remove_id":
@@ -518,9 +525,9 @@ async def handle_admin_message(update: Update, context: ContextTypes.DEFAULT_TYP
             tid = int(text.strip())
             remove_worker(tid)
             admin_state.pop(user_id)
-            await update.message.reply_text("✅ Xodim o'chirildi.", reply_markup=get_admin_keyboard())
+            await reply_clean(update, "✅ Xodim o'chirildi.", reply_markup=get_admin_keyboard())
         except:
-            await update.message.reply_text("❌ Faqat Telegram ID (raqam) kiriting!")
+            await reply_clean(update, "❌ Faqat Telegram ID (raqam) kiriting!")
         return
 
     if state == "waiting_holiday":
@@ -528,12 +535,12 @@ async def handle_admin_message(update: Update, context: ContextTypes.DEFAULT_TYP
             date = datetime.strptime(text.strip(), "%d.%m.%Y").strftime("%Y-%m-%d")
             set_holiday(date)
             admin_state.pop(user_id)
-            await update.message.reply_text(
+            await reply_clean(update, 
                 f"✅ {text.strip()} dam olish kuni belgilandi.",
                 reply_markup=get_admin_keyboard()
             )
         except:
-            await update.message.reply_text("❌ Format: KK.OO.YYYY — masalan: 09.06.2025")
+            await reply_clean(update, "❌ Format: KK.OO.YYYY — masalan: 09.06.2025")
         return
 
     if isinstance(state, dict) and state.get("step") == "waiting_date_from":
@@ -553,7 +560,7 @@ async def handle_admin_message(update: Update, context: ContextTypes.DEFAULT_TYP
                 date_to = None
 
             if date_from >= tomorrow_str:
-                await update.message.reply_text("❌ Kelajak sanani kiritib bo'lmaydi!")
+                await reply_clean(update, "❌ Kelajak sanani kiritib bo'lmaydi!")
                 return
 
             admin_state[user_id] = {**state, "step": "waiting_date_to", "date_from": date_from}
@@ -561,9 +568,9 @@ async def handle_admin_message(update: Update, context: ContextTypes.DEFAULT_TYP
                 await generate_custom_report(update, context, state, date_from, date_to)
                 admin_state.pop(user_id)
             else:
-                await update.message.reply_text("Tugash sanasini kiriting (KK.OO.YYYY):\nMasalan: 18.06.2026")
+                await reply_clean(update, "Tugash sanasini kiriting (KK.OO.YYYY):\nMasalan: 18.06.2026")
         except:
-            await update.message.reply_text("❌ Format xato! OO.YYYY yoki KK.OO.YYYY kiriting")
+            await reply_clean(update, "❌ Format xato! OO.YYYY yoki KK.OO.YYYY kiriting")
         return
 
     if isinstance(state, dict) and state.get("step") == "waiting_date_to":
@@ -573,22 +580,22 @@ async def handle_admin_message(update: Update, context: ContextTypes.DEFAULT_TYP
             try:
                 d = datetime.strptime(text.strip(), "%d.%m.%Y")
             except ValueError:
-                await update.message.reply_text("❌ Format xato! KK.OO.YYYY kiriting\nMasalan: 18.06.2026")
+                await reply_clean(update, "❌ Format xato! KK.OO.YYYY kiriting\nMasalan: 18.06.2026")
                 return
             date_to = d.strftime("%Y-%m-%d")
             date_from = state["date_from"]
 
             if date_to >= tomorrow_str:
-                await update.message.reply_text("❌ Kelajak sanani kiritib bo'lmaydi!")
+                await reply_clean(update, "❌ Kelajak sanani kiritib bo'lmaydi!")
                 return
             if date_to < date_from:
-                await update.message.reply_text("❌ Tugash sanasi boshlanish sanasidan kichik bo'lmasin!")
+                await reply_clean(update, "❌ Tugash sanasi boshlanish sanasidan kichik bo'lmasin!")
                 return
 
             await generate_custom_report(update, context, state, date_from, date_to)
             admin_state.pop(user_id)
         except Exception as e:
-            await update.message.reply_text("❌ Xatolik yuz berdi. Qayta urinib ko'ring.")
+            await reply_clean(update, "❌ Xatolik yuz berdi. Qayta urinib ko'ring.")
         return
 
     if state == "waiting_broadcast":
@@ -601,7 +608,7 @@ async def handle_admin_message(update: Update, context: ContextTypes.DEFAULT_TYP
             except:
                 pass
         admin_state.pop(user_id)
-        await update.message.reply_text(f"✅ {sent} ta xodimga xabar yuborildi!", reply_markup=get_admin_keyboard())
+        await reply_clean(update, f"✅ {sent} ta xodimga xabar yuborildi!", reply_markup=get_admin_keyboard())
         return
 
     if isinstance(state, dict) and state.get("step") == "waiting_msg_text":
@@ -609,9 +616,9 @@ async def handle_admin_message(update: Update, context: ContextTypes.DEFAULT_TYP
         try:
             await context.bot.send_message(chat_id=tid, text=f"💬 Admin xabari:\n\n{text}")
             admin_state.pop(user_id)
-            await update.message.reply_text("✅ Xabar yuborildi!", reply_markup=get_admin_keyboard())
+            await reply_clean(update, "✅ Xabar yuborildi!", reply_markup=get_admin_keyboard())
         except:
-            await update.message.reply_text("❌ Xabar yuborib bo'lmadi.")
+            await reply_clean(update, "❌ Xabar yuborib bo'lmadi.")
         return
 
     if state == "waiting_remove_holiday":
@@ -624,18 +631,18 @@ async def handle_admin_message(update: Update, context: ContextTypes.DEFAULT_TYP
             conn.commit()
             conn.close()
             admin_state.pop(user_id)
-            await update.message.reply_text(
+            await reply_clean(update, 
                 f"✅ {text.strip()} dam olish kuni bekor qilindi.",
                 reply_markup=get_admin_keyboard()
             )
         except:
-            await update.message.reply_text("❌ Format: KK.OO.YYYY — masalan: 09.06.2025")
+            await reply_clean(update, "❌ Format: KK.OO.YYYY — masalan: 09.06.2025")
         return
 
     # ── Asosiy admin tugmalari ──
     admin_state.pop(user_id, None)
     if text == "📊 Umumiy hisobot":
-        await update.message.reply_text(
+        await reply_clean(update, 
             "Hisobot davrini tanlang:",
             reply_markup=get_report_period_keyboard()
         )
@@ -644,7 +651,7 @@ async def handle_admin_message(update: Update, context: ContextTypes.DEFAULT_TYP
     if text == "👥 Masterlar":
         workers = get_all_workers()
         if not workers:
-            await update.message.reply_text("Xodimlar yo'q.")
+            await reply_clean(update, "Xodimlar yo'q.")
             return
         today = get_now().strftime("%Y-%m-%d")
         lines = ["👥 Masterlar holati:\n"]
@@ -661,7 +668,7 @@ async def handle_admin_message(update: Update, context: ContextTypes.DEFAULT_TYP
                 status = "⭕ Hali boshlamadi"
             lines.append(f"👤 {w['name']}\n{status}")
             kb.append([InlineKeyboardButton(f"👤 {w['name']}", callback_data=f"worker_{w['telegram_id']}")])
-        await update.message.reply_text(
+        await reply_clean(update, 
             "\n\n".join(lines),
             reply_markup=InlineKeyboardMarkup(kb)
         )
@@ -669,26 +676,26 @@ async def handle_admin_message(update: Update, context: ContextTypes.DEFAULT_TYP
 
     if text == "➕ Xodim qo'shish":
         admin_state[user_id] = "waiting_worker_id"
-        await update.message.reply_text("Yangi xodimning Telegram ID sini kiriting:")
+        await reply_clean(update, "Yangi xodimning Telegram ID sini kiriting:")
         return
 
     if text == "❌ Xodim o'chirish":
         admin_state[user_id] = "waiting_remove_id"
-        await update.message.reply_text("O'chiriladigan xodimning Telegram ID sini kiriting:")
+        await reply_clean(update, "O'chiriladigan xodimning Telegram ID sini kiriting:")
         return
 
     if text == "📅 Dam olish kuni belgilash":
         admin_state[user_id] = "waiting_holiday"
-        await update.message.reply_text("Dam olish kunini kiriting (KK.OO.YYYY):\nMasalan: 09.06.2025")
+        await reply_clean(update, "Dam olish kunini kiriting (KK.OO.YYYY):\nMasalan: 09.06.2025")
         return
 
     if text == "🗓 Dam olishni bekor qilish":
         admin_state[user_id] = "waiting_remove_holiday"
-        await update.message.reply_text("Bekor qilinadigan sanani kiriting (KK.OO.YYYY):\nMasalan: 09.06.2025")
+        await reply_clean(update, "Bekor qilinadigan sanani kiriting (KK.OO.YYYY):\nMasalan: 09.06.2025")
         return
 
     if text == "📖 Yo'riqnoma":
-        await update.message.reply_text(
+        await reply_clean(update, 
             "📖 Admin yo'riqnomasi\n\n"
             "👥 Masterlar — Xodimlar holati (kim kelgan, kim kelmagan, kim yakunlagan)\n\n"
             "📊 Umumiy hisobot — Davr bo'yicha barcha xodimlar hisoboti\n"
@@ -709,7 +716,7 @@ async def handle_admin_message(update: Update, context: ContextTypes.DEFAULT_TYP
             [InlineKeyboardButton("Bu hafta", callback_data="top_7"),
              InlineKeyboardButton("Bu oy", callback_data="top_30")],
         ])
-        await update.message.reply_text("Qaysi davr?", reply_markup=kb)
+        await reply_clean(update, "Qaysi davr?", reply_markup=kb)
         return
 
     if text == "💸 Oylik maosh":
@@ -719,21 +726,21 @@ async def handle_admin_message(update: Update, context: ContextTypes.DEFAULT_TYP
             total = w["total"] or 0
             w_share, _ = calc_percent(total)
             lines.append(f"👤 {w['name']}: {format_money(w_share)}")
-        await update.message.reply_text("\n".join(lines), reply_markup=get_admin_keyboard())
+        await reply_clean(update, "\n".join(lines), reply_markup=get_admin_keyboard())
         return
 
     if text == "💬 Xodimga xabar":
         workers = get_all_workers()
         if not workers:
-            await update.message.reply_text("Xodimlar yo'q.")
+            await reply_clean(update, "Xodimlar yo'q.")
             return
         kb = [[InlineKeyboardButton(f"👤 {w['name']}", callback_data=f"msgto_{w['telegram_id']}")] for w in workers]
-        await update.message.reply_text("Kimga xabar yubormoqchisiz?", reply_markup=InlineKeyboardMarkup(kb))
+        await reply_clean(update, "Kimga xabar yubormoqchisiz?", reply_markup=InlineKeyboardMarkup(kb))
         return
 
     if text == "📢 Hammaga xabar":
         admin_state[user_id] = "waiting_broadcast"
-        await update.message.reply_text("Barcha xodimlarga yuboriladigan xabarni kiriting:")
+        await reply_clean(update, "Barcha xodimlarga yuboriladigan xabarni kiriting:")
         return
 
 # ─── CALLBACKS ───
