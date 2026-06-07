@@ -31,12 +31,19 @@ def init_db():
             id SERIAL PRIMARY KEY,
             worker_id INTEGER NOT NULL,
             date TEXT NOT NULL,
+            session INTEGER DEFAULT 1,
             start_time TEXT,
             end_time TEXT,
             is_holiday INTEGER DEFAULT 0,
             FOREIGN KEY (worker_id) REFERENCES workers(id)
         )
     """)
+    # Add session column if not exists (for existing databases)
+    try:
+        c.execute("ALTER TABLE work_days ADD COLUMN session INTEGER DEFAULT 1")
+        conn.commit()
+    except:
+        conn.rollback()
 
     c.execute("""
         CREATE TABLE IF NOT EXISTS services (
@@ -98,20 +105,43 @@ def get_all_workers():
 
 # --- WORK DAYS ---
 
-def start_work_day(worker_id: int):
+def start_work_day(worker_id: int, session: int = 1):
     conn = get_conn()
     today = get_now().strftime("%Y-%m-%d")
     now_time = get_now().strftime("%H:%M")
     c = conn.cursor()
-    c.execute("SELECT * FROM work_days WHERE worker_id = %s AND date = %s", (worker_id, today))
+    c.execute("SELECT * FROM work_days WHERE worker_id = %s AND date = %s AND session = %s", (worker_id, today, session))
     existing = c.fetchone()
     if existing:
         conn.close()
         return False
-    c.execute("INSERT INTO work_days (worker_id, date, start_time) VALUES (%s, %s, %s)", (worker_id, today, now_time))
+    c.execute("INSERT INTO work_days (worker_id, date, session, start_time) VALUES (%s, %s, %s, %s)", (worker_id, today, session, now_time))
     conn.commit()
     conn.close()
     return True
+
+def get_next_session(worker_id: int):
+    conn = get_conn()
+    today = get_now().strftime("%Y-%m-%d")
+    c = conn.cursor()
+    c.execute("SELECT MAX(session) FROM work_days WHERE worker_id = %s AND date = %s", (worker_id, today))
+    row = c.fetchone()
+    conn.close()
+    return (row[0] or 0) + 1
+
+def allow_restart(worker_id: int):
+    conn = get_conn()
+    today = get_now().strftime("%Y-%m-%d")
+    now_time = get_now().strftime("%H:%M")
+    c = conn.cursor()
+    c.execute("SELECT MAX(session) FROM work_days WHERE worker_id = %s AND date = %s", (worker_id, today))
+    row = c.fetchone()
+    next_session = (row[0] or 0) + 1
+    c.execute("INSERT INTO work_days (worker_id, date, session, start_time) VALUES (%s, %s, %s, %s)", 
+              (worker_id, today, next_session, now_time))
+    conn.commit()
+    conn.close()
+    return next_session
 
 def end_work_day(worker_id: int):
     conn = get_conn()
@@ -135,9 +165,18 @@ def end_work_day(worker_id: int):
 def get_work_day(worker_id: int, date: str):
     conn = get_conn()
     c = conn.cursor()
-    c.execute("SELECT * FROM work_days WHERE worker_id = %s AND date = %s", (worker_id, date))
+    c.execute("SELECT * FROM work_days WHERE worker_id = %s AND date = %s ORDER BY session DESC LIMIT 1", (worker_id, date))
     row = c.fetchone()
     result = dict_row(c, row) if row else None
+    conn.close()
+    return result
+
+def get_all_sessions(worker_id: int, date: str):
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute("SELECT * FROM work_days WHERE worker_id = %s AND date = %s AND is_holiday = 0 ORDER BY session", (worker_id, date))
+    rows = c.fetchall()
+    result = [dict_row(c, r) for r in rows]
     conn.close()
     return result
 
