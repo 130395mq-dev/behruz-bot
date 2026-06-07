@@ -376,9 +376,23 @@ async def handle_admin_message(update: Update, context: ContextTypes.DEFAULT_TYP
         if not workers:
             await update.message.reply_text("Xodimlar yo'q.")
             return
-        kb = [[InlineKeyboardButton(f"👤 {w['name']}", callback_data=f"worker_{w['telegram_id']}")] for w in workers]
+        today = get_now().strftime("%Y-%m-%d")
+        lines = ["👥 Masterlar holati:\n"]
+        kb = []
+        for w in workers:
+            wd = get_work_day(w["id"], today)
+            if wd and wd.get("is_holiday"):
+                status = "🏖 Dam olish kuni"
+            elif wd and wd.get("end_time"):
+                status = f"✅ Yakunladi ({wd['start_time']} — {wd['end_time']})"
+            elif wd and wd.get("start_time"):
+                status = f"🟢 Ishlayapti ({wd['start_time']} dan beri)"
+            else:
+                status = "⭕ Hali boshlamadi"
+            lines.append(f"👤 {w['name']}\n{status}")
+            kb.append([InlineKeyboardButton(f"👤 {w['name']}", callback_data=f"worker_{w['telegram_id']}")])
         await update.message.reply_text(
-            "Xodimni tanlang:",
+            "\n\n".join(lines),
             reply_markup=InlineKeyboardMarkup(kb)
         )
         return
@@ -428,9 +442,11 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         from database import get_conn
         conn = get_conn()
-        w = conn.execute("SELECT name FROM workers WHERE id = ?", (worker_id,)).fetchone()
+        cur = conn.cursor()
+        cur.execute("SELECT name FROM workers WHERE id = %s", (worker_id,))
+        w = cur.fetchone()
         conn.close()
-        wname = w["name"] if w else "Xodim"
+        wname = w[0] if w else "Xodim"
 
         lines = [f"✅ {wname} ish kunini yakunladi"]
         lines.append(f"🕐 {result['start']} — {result['end']}")
@@ -582,8 +598,9 @@ async def auto_close_days(context: ContextTypes.DEFAULT_TYPE):
     from database import get_conn
     yesterday = (get_now() - timedelta(days=1)).strftime("%Y-%m-%d")
     conn = get_conn()
-    conn.execute(
-        "UPDATE work_days SET end_time = '23:59' WHERE date = ? AND start_time IS NOT NULL AND end_time IS NULL",
+    c = conn.cursor()
+    c.execute(
+        "UPDATE work_days SET end_time = '23:59' WHERE date = %s AND start_time IS NOT NULL AND end_time IS NULL",
         (yesterday,)
     )
     conn.commit()
