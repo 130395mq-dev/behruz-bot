@@ -59,7 +59,7 @@ def get_admin_keyboard():
     kb = [
         [KeyboardButton("📊 Umumiy hisobot"), KeyboardButton("👥 Masterlar")],
         [KeyboardButton("➕ Xodim qo'shish"), KeyboardButton("❌ Xodim o'chirish")],
-        [KeyboardButton("📅 Dam olish kuni belgilash")],
+        [KeyboardButton("📅 Dam olish kuni belgilash"), KeyboardButton("🗓 Dam olishni bekor qilish")],
     ]
     return ReplyKeyboardMarkup(kb, resize_keyboard=True)
 
@@ -125,6 +125,17 @@ async def handle_service(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # ── Kunni boshlash ──
     if text == "🌅 Kunni boshlash":
+        from database import get_conn
+        today_str = get_now().strftime("%Y-%m-%d")
+        conn = get_conn()
+        holiday = conn.execute(
+            "SELECT is_holiday FROM work_days WHERE worker_id = ? AND date = ? AND is_holiday = 1",
+            (worker["id"], today_str)
+        ).fetchone()
+        conn.close()
+        if holiday:
+            await update.message.reply_text("🎉 Bugun dam olish kuni! Hordiq oling 😊")
+            return
         result = start_work_day(worker["id"])
         if result:
             current_time_str = get_now().strftime("%H:%M")
@@ -331,6 +342,23 @@ async def handle_admin_message(update: Update, context: ContextTypes.DEFAULT_TYP
             await update.message.reply_text("❌ Format: KK.OO.YYYY — masalan: 09.06.2025")
         return
 
+    if state == "waiting_remove_holiday":
+        try:
+            date = datetime.strptime(text.strip(), "%d.%m.%Y").strftime("%Y-%m-%d")
+            from database import get_conn
+            conn = get_conn()
+            conn.execute("DELETE FROM work_days WHERE date = ? AND is_holiday = 1", (date,))
+            conn.commit()
+            conn.close()
+            admin_state.pop(user_id)
+            await update.message.reply_text(
+                f"✅ {text.strip()} dam olish kuni bekor qilindi.",
+                reply_markup=get_admin_keyboard()
+            )
+        except:
+            await update.message.reply_text("❌ Format: KK.OO.YYYY — masalan: 09.06.2025")
+        return
+
     # ── Asosiy admin tugmalari ──
     admin_state.pop(user_id, None)
     if text == "📊 Umumiy hisobot":
@@ -365,6 +393,11 @@ async def handle_admin_message(update: Update, context: ContextTypes.DEFAULT_TYP
     if text == "📅 Dam olish kuni belgilash":
         admin_state[user_id] = "waiting_holiday"
         await update.message.reply_text("Dam olish kunini kiriting (KK.OO.YYYY):\nMasalan: 09.06.2025")
+        return
+
+    if text == "🗓 Dam olishni bekor qilish":
+        admin_state[user_id] = "waiting_remove_holiday"
+        await update.message.reply_text("Bekor qilinadigan sanani kiriting (KK.OO.YYYY):\nMasalan: 09.06.2025")
         return
 
 # ─── CALLBACKS ───
