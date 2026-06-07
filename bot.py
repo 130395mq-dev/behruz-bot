@@ -317,7 +317,11 @@ async def handle_service(update: Update, context: ContextTypes.DEFAULT_TYPE):
             try:
                 today_str = get_now().strftime("%Y-%m-%d")
                 tomorrow_str = (get_now() + timedelta(days=1)).strftime("%Y-%m-%d")
-                d = datetime.strptime(text.strip(), "%d.%m.%Y")
+                try:
+                    d = datetime.strptime(text.strip(), "%d.%m.%Y")
+                except ValueError:
+                    await update.message.reply_text("❌ Format xato! KK.OO.YYYY kiriting\nMasalan: 18.06.2026")
+                    return
                 date_to = d.strftime("%Y-%m-%d")
                 date_from = user_state["date_from"]
                 if date_to >= tomorrow_str:
@@ -328,8 +332,8 @@ async def handle_service(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     return
                 await generate_custom_report(update, context, user_state, date_from, date_to)
                 admin_state.pop(user_id)
-            except:
-                await update.message.reply_text("❌ Format xato! KK.OO.YYYY kiriting")
+            except Exception as e:
+                await update.message.reply_text("❌ Xatolik yuz berdi. Qayta urinib ko'ring.")
             return
 
     # ── Boshqa xizmat ──
@@ -544,7 +548,11 @@ async def handle_admin_message(update: Update, context: ContextTypes.DEFAULT_TYP
         try:
             today_str = get_now().strftime("%Y-%m-%d")
             tomorrow_str = (get_now() + timedelta(days=1)).strftime("%Y-%m-%d")
-            d = datetime.strptime(text.strip(), "%d.%m.%Y")
+            try:
+                d = datetime.strptime(text.strip(), "%d.%m.%Y")
+            except ValueError:
+                await update.message.reply_text("❌ Format xato! KK.OO.YYYY kiriting\nMasalan: 18.06.2026")
+                return
             date_to = d.strftime("%Y-%m-%d")
             date_from = state["date_from"]
 
@@ -557,8 +565,8 @@ async def handle_admin_message(update: Update, context: ContextTypes.DEFAULT_TYP
 
             await generate_custom_report(update, context, state, date_from, date_to)
             admin_state.pop(user_id)
-        except:
-            await update.message.reply_text("❌ Format xato! KK.OO.YYYY kiriting")
+        except Exception as e:
+            await update.message.reply_text("❌ Xatolik yuz berdi. Qayta urinib ko'ring.")
         return
 
     if state == "waiting_broadcast":
