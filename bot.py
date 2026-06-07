@@ -230,28 +230,14 @@ async def handle_service(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # ── Hisobotim ──
     if text == "📊 Hisobotim":
-        services = get_services_by_worker_date(worker["id"], today)
-        total = sum(s["total"] for s in services)
-        worker_share, owner_share = calc_percent(total)
-
-        work_day = get_work_day(worker["id"], today)
-        lines = [f"📊 {worker['name']} — Bugungi hisobot"]
-        lines.append(f"📅 {get_now().strftime('%d.%m.%Y')}")
-        if work_day and work_day["start_time"]:
-            lines.append(f"🕐 Boshlash: {work_day['start_time']}")
-        lines.append("")
-
-        if services:
-            for s in services:
-                lines.append(f"{s['service_name']} × {s['cnt']} — {format_money(s['total'])}")
-            lines.append("")
-            lines.append("─" * 25)
-            lines.append(f"💰 Jami: {format_money(total)}")
-            lines.append(f"👤 Sizniki (70%): {format_money(worker_share)}")
-        else:
-            lines.append("Bugun hali xizmat kiritilmagan.")
-
-        await update.message.reply_text("\n".join(lines), reply_markup=get_worker_keyboard())
+        kb = InlineKeyboardMarkup([
+            [InlineKeyboardButton("📅 Bugun", callback_data=f"myreport_{worker['id']}_0"),
+             InlineKeyboardButton("3 kunlik", callback_data=f"myreport_{worker['id']}_3")],
+            [InlineKeyboardButton("7 kunlik", callback_data=f"myreport_{worker['id']}_7"),
+             InlineKeyboardButton("15 kunlik", callback_data=f"myreport_{worker['id']}_15")],
+            [InlineKeyboardButton("1 oylik", callback_data=f"myreport_{worker['id']}_30")],
+        ])
+        await update.message.reply_text("Qaysi hisobotni ko'rmoqchisiz?", reply_markup=kb)
         return
 
     # ── Oxirgini o'chir ──
@@ -556,6 +542,85 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"👤 {worker['name']} — davr tanlang:",
             reply_markup=InlineKeyboardMarkup(kb)
         )
+        return
+
+    if data.startswith("myreport_"):
+        parts = data.split("_")
+        worker_id = int(parts[1])
+        days = int(parts[2])
+
+        from database import get_conn
+        conn = get_conn()
+        cur = conn.cursor()
+        cur.execute("SELECT * FROM workers WHERE id = %s", (worker_id,))
+        w = cur.fetchone()
+        conn.close()
+        if not w:
+            await query.edit_message_text("Xodim topilmadi.")
+            return
+        from database import dict_row as _dict_row
+        wconn = get_conn()
+        wcur = wconn.cursor()
+        wcur.execute("SELECT * FROM workers WHERE id = %s", (worker_id,))
+        wrow = wcur.fetchone()
+        worker_data = _dict_row(wcur, wrow)
+        wconn.close()
+
+        if days == 0:
+            # Bugun
+            today = get_now().strftime("%Y-%m-%d")
+            services = get_services_by_worker_date(worker_id, today)
+            total = sum(s["total"] for s in services)
+            worker_share, _ = calc_percent(total)
+            work_day = get_work_day(worker_id, today)
+
+            lines = [f"📊 {worker_data['name']} — Bugungi hisobot"]
+            lines.append(f"📅 {get_now().strftime('%d.%m.%Y')}")
+            if work_day and work_day.get("start_time"):
+                if work_day.get("end_time"):
+                    lines.append(f"🕐 {work_day['start_time']} — {work_day['end_time']}")
+                else:
+                    lines.append(f"🕐 Boshlash: {work_day['start_time']}")
+            lines.append("")
+            if services:
+                for s in services:
+                    lines.append(f"{s['service_name']} × {s['cnt']} — {format_money(s['total'])}")
+                lines.append("")
+                lines.append("─" * 25)
+                lines.append(f"💰 Jami: {format_money(total)}")
+                lines.append(f"👤 Sizniki (70%): {format_money(worker_share)}")
+            else:
+                lines.append("Bugun hali xizmat kiritilmagan.")
+        else:
+            # Ko'p kunlik
+            services = get_services_by_worker_range(worker_id, days)
+            summaries = get_worker_summary_range(worker_id, days)
+            label = {3: "3 kunlik", 7: "7 kunlik", 15: "15 kunlik", 30: "1 oylik"}[days]
+
+            lines = [f"📊 {worker_data['name']} — {label} hisobot\n"]
+            by_date = {}
+            for s in services:
+                by_date.setdefault(s["date"], []).append(s)
+
+            total_all = 0
+            for date_str in sorted(by_date.keys(), reverse=True):
+                d = datetime.strptime(date_str, "%Y-%m-%d").strftime("%d.%m.%Y")
+                day_services = by_date[date_str]
+                day_total = sum(s["total"] for s in day_services)
+                total_all += day_total
+                w_share, _ = calc_percent(day_total)
+                lines.append(f"📅 {d}")
+                for s in day_services:
+                    lines.append(f"  {s['service_name']} × {s['cnt']} — {format_money(s['total'])}")
+                lines.append(f"  💰 {format_money(day_total)} | 👤 Sizniki: {format_money(w_share)}")
+                lines.append("")
+
+            total_share, _ = calc_percent(total_all)
+            lines.append("─" * 25)
+            lines.append(f"💰 Jami: {format_money(total_all)}")
+            lines.append(f"👤 Sizniki (70%): {format_money(total_share)}")
+
+        await query.edit_message_text("\n".join(lines))
         return
 
     if data.startswith("restart_"):
