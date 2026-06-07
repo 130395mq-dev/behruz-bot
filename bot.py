@@ -463,20 +463,29 @@ async def handle_admin_message(update: Update, context: ContextTypes.DEFAULT_TYP
 
     if isinstance(state, dict) and state.get("step") == "waiting_date_from":
         try:
-            # Check if it's a month format MM.YYYY
+            today_str = get_now().strftime("%Y-%m-%d")
+            BOT_START_DATE = "2026-06-08"
+
             if len(text.strip()) == 7 and text.strip()[2] == ".":
                 month, year = text.strip().split(".")
                 from calendar import monthrange
                 days_in_month = monthrange(int(year), int(month))[1]
                 date_from = f"{year}-{month.zfill(2)}-01"
-                date_to = f"{year}-{month.zfill(2)}-{days_in_month}"
+                date_to = f"{year}-{month.zfill(2)}-{str(days_in_month).zfill(2)}"
             else:
                 d = datetime.strptime(text.strip(), "%d.%m.%Y")
                 date_from = d.strftime("%Y-%m-%d")
                 date_to = None
-            admin_state[user_id] = {**state, "step": "waiting_date_to", "date_from": date_from, "date_to": date_to}
+
+            if date_from > today_str:
+                await update.message.reply_text("❌ Kelajak sanani kiritib bo'lmaydi!")
+                return
+            if date_from < BOT_START_DATE:
+                await update.message.reply_text(f"❌ Bot {BOT_START_DATE[8:]}.{BOT_START_DATE[5:7]}.{BOT_START_DATE[:4]} dan ishlaydi!")
+                return
+
+            admin_state[user_id] = {**state, "step": "waiting_date_to", "date_from": date_from}
             if date_to:
-                # Full month — generate report immediately
                 await generate_custom_report(update, context, state, date_from, date_to)
                 admin_state.pop(user_id)
             else:
@@ -487,9 +496,18 @@ async def handle_admin_message(update: Update, context: ContextTypes.DEFAULT_TYP
 
     if isinstance(state, dict) and state.get("step") == "waiting_date_to":
         try:
+            today_str = get_now().strftime("%Y-%m-%d")
             d = datetime.strptime(text.strip(), "%d.%m.%Y")
             date_to = d.strftime("%Y-%m-%d")
             date_from = state["date_from"]
+
+            if date_to > today_str:
+                await update.message.reply_text("❌ Kelajak sanani kiritib bo'lmaydi!")
+                return
+            if date_to < date_from:
+                await update.message.reply_text("❌ Tugash sanasi boshlanish sanasidan kichik bo'lmasin!")
+                return
+
             await generate_custom_report(update, context, state, date_from, date_to)
             admin_state.pop(user_id)
         except:
@@ -684,7 +702,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             pass
         return
 
-    if data.startswith("report_"):
+    if data.startswith("report_") and not data.endswith("_custom"):
         days = int(data.split("_")[1])
         label = {1: "1 kunlik", 3: "3 kunlik", 7: "7 kunlik", 15: "15 kunlik", 30: "1 oylik"}[days]
 
@@ -842,7 +860,10 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if data.startswith("myreport_"):
         parts = data.split("_")
         worker_id = int(parts[1])
-        days = int(parts[2])
+        days_str = parts[2]
+        if days_str == "custom":
+            return
+        days = int(days_str)
 
         from database import get_conn, dict_row as _dict_row
         wconn = get_conn()
