@@ -67,13 +67,14 @@ def get_admin_keyboard():
     ]
     return ReplyKeyboardMarkup(kb, resize_keyboard=True)
 
-def get_report_period_keyboard():
+def get_report_period_keyboard(prefix="report"):
     kb = [
-        [InlineKeyboardButton("1 kunlik", callback_data="report_1"),
-         InlineKeyboardButton("3 kunlik", callback_data="report_3")],
-        [InlineKeyboardButton("7 kunlik", callback_data="report_7"),
-         InlineKeyboardButton("15 kunlik", callback_data="report_15")],
-        [InlineKeyboardButton("1 oylik", callback_data="report_30")],
+        [InlineKeyboardButton("1 kunlik", callback_data=f"{prefix}_1"),
+         InlineKeyboardButton("3 kunlik", callback_data=f"{prefix}_3")],
+        [InlineKeyboardButton("7 kunlik", callback_data=f"{prefix}_7"),
+         InlineKeyboardButton("15 kunlik", callback_data=f"{prefix}_15")],
+        [InlineKeyboardButton("1 oylik", callback_data=f"{prefix}_30"),
+         InlineKeyboardButton("📅 Aniq sana", callback_data=f"{prefix}_custom")],
     ]
     return InlineKeyboardMarkup(kb)
 
@@ -238,7 +239,8 @@ async def handle_service(update: Update, context: ContextTypes.DEFAULT_TYPE):
              InlineKeyboardButton("3 kunlik", callback_data=f"myreport_{worker['id']}_3")],
             [InlineKeyboardButton("7 kunlik", callback_data=f"myreport_{worker['id']}_7"),
              InlineKeyboardButton("15 kunlik", callback_data=f"myreport_{worker['id']}_15")],
-            [InlineKeyboardButton("1 oylik", callback_data=f"myreport_{worker['id']}_30")],
+            [InlineKeyboardButton("1 oylik", callback_data=f"myreport_{worker['id']}_30"),
+             InlineKeyboardButton("📅 Aniq sana", callback_data=f"myreport_{worker['id']}_custom")],
         ])
         await update.message.reply_text("Qaysi hisobotni ko'rmoqchisiz?", reply_markup=kb)
         return
@@ -353,6 +355,49 @@ async def handle_service(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 admin_state = {}
 
+async def generate_custom_report(update, context, state, date_from, date_to):
+    from database import get_conn
+    conn = get_conn()
+    c = conn.cursor()
+    label = f"{date_from[8:]}.{date_from[5:7]}.{date_from[:4]} — {date_to[8:]}.{date_to[5:7]}.{date_to[:4]}"
+
+    if state.get("type") == "worker":
+        worker_id = state["worker_id"]
+        c.execute(
+            "SELECT w.name, COALESCE(SUM(s.price),0) as total FROM workers w "
+            "LEFT JOIN services s ON w.id = s.worker_id AND s.date BETWEEN %s AND %s "
+            "WHERE w.id = %s GROUP BY w.name",
+            (date_from, date_to, worker_id)
+        )
+        row = c.fetchone()
+        conn.close()
+        if row:
+            name, total = row
+            w_share, o_share = calc_percent(total)
+            lines = [f"👤 {name} — {label}", f"💰 Jami: {format_money(total)}", f"👤 Sizniki (70%): {format_money(w_share)}"]
+            await update.message.reply_text("\n".join(lines), reply_markup=get_worker_keyboard())
+    else:
+        c.execute(
+            "SELECT w.name, COALESCE(SUM(s.price),0) as total FROM workers w "
+            "LEFT JOIN services s ON w.id = s.worker_id AND s.date BETWEEN %s AND %s "
+            "WHERE w.is_active = 1 GROUP BY w.name ORDER BY total DESC",
+            (date_from, date_to)
+        )
+        rows = c.fetchall()
+        conn.close()
+        total_all = sum(r[1] for r in rows)
+        _, owner_total = calc_percent(total_all)
+        lines = [f"📊 {label} hisoboti\n"]
+        for row in rows:
+            name, total = row
+            _, o_share = calc_percent(total)
+            lines.append(f"👤 {name}: {format_money(total)} → Egasiga: {format_money(o_share)}")
+        lines.append("")
+        lines.append("─" * 25)
+        lines.append(f"💰 Umumiy: {format_money(total_all)}")
+        lines.append(f"👑 Egasiga: {format_money(owner_total)}")
+        await update.message.reply_text("\n".join(lines), reply_markup=get_admin_keyboard())
+
 async def handle_admin_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     text = update.message.text
@@ -414,6 +459,41 @@ async def handle_admin_message(update: Update, context: ContextTypes.DEFAULT_TYP
             )
         except:
             await update.message.reply_text("❌ Format: KK.OO.YYYY — masalan: 09.06.2025")
+        return
+
+    if isinstance(state, dict) and state.get("step") == "waiting_date_from":
+        try:
+            # Check if it's a month format MM.YYYY
+            if len(text.strip()) == 7 and text.strip()[2] == ".":
+                month, year = text.strip().split(".")
+                from calendar import monthrange
+                days_in_month = monthrange(int(year), int(month))[1]
+                date_from = f"{year}-{month.zfill(2)}-01"
+                date_to = f"{year}-{month.zfill(2)}-{days_in_month}"
+            else:
+                d = datetime.strptime(text.strip(), "%d.%m.%Y")
+                date_from = d.strftime("%Y-%m-%d")
+                date_to = None
+            admin_state[user_id] = {**state, "step": "waiting_date_to", "date_from": date_from, "date_to": date_to}
+            if date_to:
+                # Full month — generate report immediately
+                await generate_custom_report(update, context, state, date_from, date_to)
+                admin_state.pop(user_id)
+            else:
+                await update.message.reply_text("Tugash sanasini kiriting (KK.OO.YYYY):\nMasalan: 18.06.2026")
+        except:
+            await update.message.reply_text("❌ Format xato! OO.YYYY yoki KK.OO.YYYY kiriting")
+        return
+
+    if isinstance(state, dict) and state.get("step") == "waiting_date_to":
+        try:
+            d = datetime.strptime(text.strip(), "%d.%m.%Y")
+            date_to = d.strftime("%Y-%m-%d")
+            date_from = state["date_from"]
+            await generate_custom_report(update, context, state, date_from, date_to)
+            admin_state.pop(user_id)
+        except:
+            await update.message.reply_text("❌ Format xato! KK.OO.YYYY kiriting")
         return
 
     if state == "waiting_broadcast":
@@ -710,6 +790,24 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         sname = parts[2]
         pending_service[query.from_user.id] = sname
         await query.edit_message_text(f"{sname} uchun yangi narxni kiriting (so'm):")
+        return
+
+    if data.endswith("_custom"):
+        prefix = data.replace("_custom", "")
+        user_id = query.from_user.id
+        if prefix.startswith("myreport_"):
+            worker_id = int(prefix.split("_")[1])
+            admin_state[user_id] = {"step": "waiting_date_from", "type": "worker", "worker_id": worker_id}
+            await query.edit_message_text(
+                "Oyni (OO.YYYY) yoki boshlanish sanasini (KK.OO.YYYY) kiriting:\n"
+                "Masalan: 05.2026 yoki 01.05.2026"
+            )
+        else:
+            admin_state[user_id] = {"step": "waiting_date_from", "type": "admin"}
+            await query.edit_message_text(
+                "Oyni (OO.YYYY) yoki boshlanish sanasini (KK.OO.YYYY) kiriting:\n"
+                "Masalan: 05.2026 yoki 01.05.2026"
+            )
         return
 
     if data.startswith("top_"):
