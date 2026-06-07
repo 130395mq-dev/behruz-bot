@@ -88,6 +88,15 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(
             "❌ Siz tizimda ro'yxatdan o'tmagansiz.\nAdmin bilan bog'laning."
         )
+        try:
+            first = update.effective_user.first_name or ""
+            username = f"@{update.effective_user.username}" if update.effective_user.username else "username yo'q"
+            await context.bot.send_message(
+                chat_id=ADMIN_ID,
+                text=f"🔔 Yangi foydalanuvchi botga kirdi!\n👤 Ismi: {first}\n🔗 {username}\n🆔 ID: {user_id}"
+            )
+        except:
+            pass
 
 # ─── SERVICE HANDLER ───
 
