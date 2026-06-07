@@ -245,11 +245,32 @@ async def handle_service(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # ── Oxirgini o'chir ──
     if text == "🗑 Oxirgini o'chir":
-        result = delete_last_service(worker["id"])
-        if result:
-            await update.message.reply_text("✅ Oxirgi yozuv o'chirildi.", reply_markup=get_worker_keyboard())
-        else:
-            await update.message.reply_text("⚠️ O'chiriladigan yozuv topilmadi.", reply_markup=get_worker_keyboard())
+        from database import get_conn
+        conn = get_conn()
+        c = conn.cursor()
+        c.execute(
+            "SELECT id, service_name, price, created_at FROM services "
+            "WHERE worker_id = %s AND date = %s ORDER BY id",
+            (worker["id"], today)
+        )
+        rows = c.fetchall()
+        conn.close()
+        if not rows:
+            await update.message.reply_text("⚠️ Bugun hali xizmat kiritilmagan.", reply_markup=get_worker_keyboard())
+            return
+        kb = []
+        for row in rows:
+            sid, sname, sprice, screated = row
+            time_str = screated[11:16] if len(screated) > 11 else ""
+            kb.append([InlineKeyboardButton(
+                f"{sname} — {format_money(sprice)} ({time_str})",
+                callback_data=f"delservice_{sid}_{worker['id']}"
+            )])
+        kb.append([InlineKeyboardButton("❌ Bekor qilish", callback_data="delservice_cancel")])
+        await update.message.reply_text(
+            "Qaysi yozuvni o'chirmoqchisiz?",
+            reply_markup=InlineKeyboardMarkup(kb)
+        )
         return
 
     # ── Admin panel (xodim bosadi) ──
@@ -643,6 +664,52 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"👤 {worker['name']} — davr tanlang:",
             reply_markup=InlineKeyboardMarkup(kb)
         )
+        return
+
+    if data == "delservice_cancel":
+        await query.edit_message_text("❌ Bekor qilindi.")
+        return
+
+    if data.startswith("delservice_"):
+        parts = data.split("_")
+        service_id = int(parts[1])
+        worker_id = int(parts[2])
+
+        from database import get_conn
+        conn = get_conn()
+        c = conn.cursor()
+        c.execute("SELECT service_name, price FROM services WHERE id = %s", (service_id,))
+        row = c.fetchone()
+        if not row:
+            conn.close()
+            await query.edit_message_text("⚠️ Yozuv topilmadi.")
+            return
+        sname, sprice = row
+        c.execute("DELETE FROM services WHERE id = %s", (service_id,))
+        conn.commit()
+        conn.close()
+
+        # Ask to re-enter
+        kb = InlineKeyboardMarkup([
+            [InlineKeyboardButton("✅ Ha, qayta kiritaman", callback_data=f"reenter_{worker_id}_{sname}"),
+             InlineKeyboardButton("❌ Yo'q", callback_data="reenter_cancel")]
+        ])
+        await query.edit_message_text(
+            f"✅ O'chirildi: {sname} — {format_money(sprice)}\n\nQayta kiritasizmi?",
+            reply_markup=kb
+        )
+        return
+
+    if data == "reenter_cancel":
+        await query.edit_message_text("✅ O'chirildi.")
+        return
+
+    if data.startswith("reenter_"):
+        parts = data.split("_", 2)
+        worker_id = int(parts[1])
+        sname = parts[2]
+        pending_service[query.from_user.id] = sname
+        await query.edit_message_text(f"{sname} uchun yangi narxni kiriting (so'm):")
         return
 
     if data.startswith("top_"):
