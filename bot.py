@@ -290,7 +290,7 @@ async def handle_service(update: Update, context: ContextTypes.DEFAULT_TYPE):
             try:
                 today_str = get_now().strftime("%Y-%m-%d")
                 tomorrow_str = (get_now() + timedelta(days=1)).strftime("%Y-%m-%d")
-                    if len(text.strip()) == 7 and text.strip()[2] == ".":
+                if len(text.strip()) == 7 and text.strip()[2] == ".":
                     month, year = text.strip().split(".")
                     from calendar import monthrange
                     days_in_month = monthrange(int(year), int(month))[1]
