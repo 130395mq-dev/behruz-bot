@@ -1,7 +1,12 @@
 import os
 import asyncio
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from dotenv import load_dotenv
+
+TZ = timezone(timedelta(hours=5))
+
+def now():
+    return datetime.now(TZ)
 from telegram import Update, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import (
     Application, CommandHandler, MessageHandler, CallbackQueryHandler,
@@ -115,14 +120,14 @@ async def handle_service(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ Siz tizimda yo'qsiz.")
         return
 
-    today = datetime.now().strftime("%Y-%m-%d")
+    today = now().strftime("%Y-%m-%d")
     work_day = get_work_day(worker["id"], today)
 
     # ── Kunni boshlash ──
     if text == "🌅 Kunni boshlash":
         result = start_work_day(worker["id"])
         if result:
-            now = datetime.now().strftime("%H:%M")
+            now = now().strftime("%H:%M")
             await update.message.reply_text(
                 f"✅ Ish kuni boshlandi!\n🕐 Boshlash vaqti: {now}",
                 reply_markup=get_worker_keyboard()
@@ -133,6 +138,31 @@ async def handle_service(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # ── Kunni yakunlash ──
     if text == "✅ Kunni yakunlash":
+        work_day_check = get_work_day(worker["id"], today)
+        if not work_day_check or not work_day_check["start_time"]:
+            await update.message.reply_text("⚠️ Avval kunni boshlang!")
+            return
+        if work_day_check["end_time"]:
+            await update.message.reply_text("⚠️ Kun allaqachon yakunlangan.")
+            return
+
+        services_check = get_services_by_worker_date(worker["id"], today)
+        total_check = sum(s["total"] for s in services_check)
+        current_time = now().strftime("%H:%M")
+
+        kb = InlineKeyboardMarkup([
+            [InlineKeyboardButton("✅ Ha, yakunla", callback_data=f"endday_{worker['id']}"),
+             InlineKeyboardButton("❌ Yo'q", callback_data="endday_cancel")]
+        ])
+        await update.message.reply_text(
+            f"⚠️ Kunni yakunlamoqchimisiz?\n\n"
+            f"🕐 Hozirgi vaqt: {current_time}\n"
+            f"💰 Bugungi jami: {format_money(total_check)}",
+            reply_markup=kb
+        )
+        return
+
+    if False:  # placeholder — real end handled in callback
         result = end_work_day(worker["id"])
         if not result:
             await update.message.reply_text("⚠️ Avval kunni boshlang yoki allaqachon yakunlangan.")
@@ -141,7 +171,7 @@ async def handle_service(update: Update, context: ContextTypes.DEFAULT_TYPE):
         services = get_services_by_worker_date(worker["id"], today)
         total = sum(s["total"] for s in services)
         worker_share, owner_share = calc_percent(total)
-        now = datetime.now().strftime("%H:%M")
+        now = now().strftime("%H:%M")
 
         lines = [f"✅ {worker['name']} ish kunini yakunladi"]
         lines.append(f"🕐 {result['start']} — {result['end']}")
@@ -183,7 +213,7 @@ async def handle_service(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         work_day = get_work_day(worker["id"], today)
         lines = [f"📊 {worker['name']} — Bugungi hisobot"]
-        lines.append(f"📅 {datetime.now().strftime('%d.%m.%Y')}")
+        lines.append(f"📅 {now().strftime('%d.%m.%Y')}")
         if work_day and work_day["start_time"]:
             lines.append(f"🕐 Boshlash: {work_day['start_time']}")
         lines.append("")
@@ -223,6 +253,9 @@ async def handle_service(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not work_day or not work_day["start_time"]:
             await update.message.reply_text("⚠️ Avval '🌅 Kunni boshlash' ni bosing!")
             return
+        if work_day and work_day["end_time"]:
+            await update.message.reply_text("⚠️ Siz kunni yakunlagansiz! Yangi kun uchun '🌅 Kunni boshlash' ni bosing.")
+            return
         pending_service[user_id] = text
         await update.message.reply_text(f"{text} uchun narxni kiriting (so'm):")
         return
@@ -234,7 +267,7 @@ async def handle_service(update: Update, context: ContextTypes.DEFAULT_TYPE):
             service_name = pending_service.pop(user_id)
             add_service(worker["id"], service_name, price)
             await update.message.reply_text(
-                f"✅ Saqlandi!\n{service_name} — {format_money(price)}\n📅 {datetime.now().strftime('%d.%m.%Y %H:%M')}",
+                f"✅ Saqlandi!\n{service_name} — {format_money(price)}\n📅 {now().strftime('%d.%m.%Y %H:%M')}",
                 reply_markup=get_worker_keyboard()
             )
         except ValueError:
@@ -339,6 +372,57 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     data = query.data
+
+    if data == "endday_cancel":
+        await query.edit_message_text("❌ Yakunlash bekor qilindi.")
+        return
+
+    if data.startswith("endday_"):
+        worker_id = int(data.split("_")[1])
+        result = end_work_day(worker_id)
+        if not result:
+            await query.edit_message_text("⚠️ Xatolik yuz berdi.")
+            return
+
+        today = now().strftime("%Y-%m-%d")
+        services = get_services_by_worker_date(worker_id, today)
+        total = sum(s["total"] for s in services)
+        worker_share, owner_share = calc_percent(total)
+
+        from database import get_conn
+        conn = get_conn()
+        w = conn.execute("SELECT name FROM workers WHERE id = ?", (worker_id,)).fetchone()
+        conn.close()
+        wname = w["name"] if w else "Xodim"
+
+        lines = [f"✅ {wname} ish kunini yakunladi"]
+        lines.append(f"🕐 {result['start']} — {result['end']}")
+
+        try:
+            fmt = "%H:%M"
+            delta = datetime.strptime(result["end"], fmt) - datetime.strptime(result["start"], fmt)
+            h, m = divmod(int(delta.total_seconds()) // 60, 60)
+            lines.append(f"⏱ Ish vaqti: {h} soat {m} daqiqa")
+        except:
+            pass
+
+        lines.append("")
+        lines.append("📋 Xizmatlar:")
+        for s in services:
+            lines.append(f"  {s['service_name']} × {s['cnt']} — {format_money(s['total'])}")
+        lines.append("")
+        lines.append("─" * 25)
+        lines.append(f"💰 Jami: {format_money(total)}")
+        lines.append(f"👤 {wname} (70%): {format_money(worker_share)}")
+        lines.append(f"👑 Egasiga (30%): {format_money(owner_share)}")
+
+        msg = "\n".join(lines)
+        await query.edit_message_text(msg)
+        try:
+            await context.bot.send_message(chat_id=ADMIN_ID, text=f"🔔 {msg}")
+        except:
+            pass
+        return
 
     if data.startswith("report_"):
         days = int(data.split("_")[1])
@@ -507,7 +591,7 @@ async def evening_admin_report(context: ContextTypes.DEFAULT_TYPE):
     total_all = sum(w["total"] or 0 for w in summary)
     _, owner_total = calc_percent(total_all)
 
-    today = datetime.now().strftime("%d.%m.%Y")
+    today = now().strftime("%d.%m.%Y")
     lines = [f"📊 Kun yakunlandi — {today}\n"]
 
     for w in summary:
@@ -516,7 +600,7 @@ async def evening_admin_report(context: ContextTypes.DEFAULT_TYPE):
         worker_id = w["id"]
 
         from database import get_services_by_worker_date
-        services = get_services_by_worker_date(worker_id, datetime.now().strftime("%Y-%m-%d"))
+        services = get_services_by_worker_date(worker_id, now().strftime("%Y-%m-%d"))
 
         time_info = ""
         if w["start_time"]:
