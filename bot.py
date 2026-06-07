@@ -332,6 +332,7 @@ async def handle_admin_message(update: Update, context: ContextTypes.DEFAULT_TYP
         return
 
     # ── Asosiy admin tugmalari ──
+    admin_state.pop(user_id, None)
     if text == "📊 Umumiy hisobot":
         await update.message.reply_text(
             "Hisobot davrini tanlang:",
