@@ -281,7 +281,7 @@ def get_services_by_worker_range(worker_id: int, days: int):
     c.execute(
         "SELECT date, service_name, COUNT(*) as cnt, SUM(price) as total "
         "FROM services WHERE worker_id = %s "
-        "AND date >= (CURRENT_DATE - INTERVAL '1 day' * %s)::text "
+        "AND date::date >= CURRENT_DATE - INTERVAL '1 day' * %s "
         "GROUP BY date, service_name ORDER BY date DESC",
         (worker_id, days - 1)
     )
@@ -295,7 +295,7 @@ def get_worker_summary_range(worker_id: int, days: int):
     c = conn.cursor()
     c.execute(
         "SELECT date, SUM(price) as total FROM services WHERE worker_id = %s "
-        "AND date >= (CURRENT_DATE - INTERVAL '1 day' * %s)::text GROUP BY date ORDER BY date DESC",
+        "AND date::date >= CURRENT_DATE - INTERVAL '1 day' * %s GROUP BY date ORDER BY date DESC",
         (worker_id, days - 1)
     )
     rows = c.fetchall()
@@ -309,7 +309,7 @@ def get_all_workers_summary_range(days: int):
     c.execute(
         "SELECT w.id, w.name, w.telegram_id, COALESCE(SUM(s.price), 0) as total "
         "FROM workers w LEFT JOIN services s ON w.id = s.worker_id "
-        "AND s.date >= (CURRENT_DATE - INTERVAL '1 day' * %s)::text "
+        "AND s.date::date >= CURRENT_DATE - INTERVAL '1 day' * %s "
         "WHERE w.is_active = 1 GROUP BY w.id, w.name, w.telegram_id ORDER BY total DESC",
         (days - 1,)
     )
