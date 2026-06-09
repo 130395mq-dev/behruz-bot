@@ -329,8 +329,32 @@ async def handle_service(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # ── Aniq sana (xodim) ──
+    # ── Mijoz qabul state (xodim) ──
     user_state = admin_state.get(user_id)
+    if isinstance(user_state, dict) and user_state.get("step") == "waiting_client_name":
+        admin_state[user_id] = {**user_state, "step": "waiting_client_time", "client_name": text.strip()}
+        await update.message.reply_text("Vaqtni kiriting (HH:MM):\nMasalan: 14:30")
+        return
+
+    if isinstance(user_state, dict) and user_state.get("step") == "waiting_client_time":
+        try:
+            datetime.strptime(text.strip(), "%H:%M")
+            time_str = text.strip()
+            worker_id = user_state["worker_id"]
+            date_str = user_state["date"]
+            label = user_state["label"]
+            client_name = user_state["client_name"]
+            add_appointment(worker_id, date_str, time_str, client_name)
+            admin_state.pop(user_id)
+            await update.message.reply_text(
+                f"✅ Saqlandi!\n📅 {label.capitalize()}\n🕐 {time_str} — {client_name}",
+                reply_markup=get_worker_keyboard()
+            )
+        except ValueError:
+            await update.message.reply_text("❌ Format xato! HH:MM kiriting\nMasalan: 14:30")
+        return
+
+    # ── Aniq sana (xodim) ──
     if isinstance(user_state, dict) and user_state.get("type") == "worker":
         if user_state.get("step") == "waiting_date_from":
             try:
