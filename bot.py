@@ -295,9 +295,8 @@ async def handle_service(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # ── Admin panel (xodim bosadi) ──
     if text == "👑 Admin panel":
         await update.message.reply_text(
-            "👑 Bu bo'lim faqat Behruz aka uchun!\nSiz esa master! 😄"
+            "👑 Bu bo'lim faqat Behruz aka uchun!\nSiz esa master! 😄🤣"
         )
-        await context.bot.send_sticker(chat_id=update.effective_chat.id, sticker=STICKER_LAUGH)
         return
 
     # ── Mijoz qabul ──
