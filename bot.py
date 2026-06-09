@@ -58,25 +58,37 @@ async def reply_clean(update, text, reply_markup=None):
 def get_worker_keyboard():
     kb = [
         [KeyboardButton("🌅 Kunni boshlash"), KeyboardButton("✅ Kunni yakunlash")],
+        [KeyboardButton("✂️ Xizmatlar"), KeyboardButton("📊 Hisobot")],
+        [KeyboardButton("📅 Mijoz qabul"), KeyboardButton("📖 Yo'riqnoma")],
+        [KeyboardButton("👑 Admin panel")],
+    ]
+    return ReplyKeyboardMarkup(kb, resize_keyboard=True)
+
+def get_services_keyboard():
+    kb = [
         [KeyboardButton("✂️ Soch olish"), KeyboardButton("🚿 Soch yuvish")],
         [KeyboardButton("🪒 Soqol olish"), KeyboardButton("👰 Kiyov tayyorlash")],
         [KeyboardButton("💆 Yuz tozalash"), KeyboardButton("🎭 Maska")],
         [KeyboardButton("🎨 Soch bo'yash"), KeyboardButton("🔧 Boshqa xizmat")],
-        [KeyboardButton("🗑 Oxirgini o'chir"), KeyboardButton("📊 Hisobotim")],
-        [KeyboardButton("📈 Shaxsiy rekord"), KeyboardButton("📅 Mijoz qabul")],
-        [KeyboardButton("👑 Admin panel"), KeyboardButton("📖 Yo'riqnoma")],
+        [KeyboardButton("🗑 Oxirgini o'chir"), KeyboardButton("🔙 Orqaga")],
+    ]
+    return ReplyKeyboardMarkup(kb, resize_keyboard=True)
+
+def get_report_keyboard():
+    kb = [
+        [KeyboardButton("📊 Bugungi hisobot"), KeyboardButton("📈 Shaxsiy rekord")],
+        [KeyboardButton("📅 Aniq sana hisoboti"), KeyboardButton("🔙 Orqaga")],
     ]
     return ReplyKeyboardMarkup(kb, resize_keyboard=True)
 
 def get_admin_keyboard():
     kb = [
         [KeyboardButton("👥 Masterlar"), KeyboardButton("📊 Umumiy hisobot")],
-        [KeyboardButton("📅 Qabullar"), KeyboardButton("📅 Ertangi qabullar")],
-        [KeyboardButton("🏆 Eng yaxshi master"), KeyboardButton("💸 Oylik maosh")],
-        [KeyboardButton("💬 Xodimga xabar"), KeyboardButton("📢 Hammaga xabar")],
-        [KeyboardButton("📅 Dam olish kuni belgilash"), KeyboardButton("🗓 Dam olishni bekor qilish")],
-        [KeyboardButton("➕ Xodim qo'shish"), KeyboardButton("❌ Xodim o'chirish")],
-        [KeyboardButton("📖 Yo'riqnoma")],
+        [KeyboardButton("📅 Qabullar"), KeyboardButton("🏆 Eng yaxshi master")],
+        [KeyboardButton("💸 Oylik maosh"), KeyboardButton("💬 Xodimga xabar")],
+        [KeyboardButton("📢 Hammaga xabar"), KeyboardButton("📅 Dam olish kuni belgilash")],
+        [KeyboardButton("🗓 Dam olishni bekor qilish"), KeyboardButton("➕ Xodim qo'shish")],
+        [KeyboardButton("❌ Xodim o'chirish"), KeyboardButton("📖 Yo'riqnoma")],
     ]
     return ReplyKeyboardMarkup(kb, resize_keyboard=True)
 
@@ -246,17 +258,9 @@ async def handle_service(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 pass
         return
 
-    # ── Hisobotim ──
+    # ── Hisobotim (eski) ──
     if text == "📊 Hisobotim":
-        kb = InlineKeyboardMarkup([
-            [InlineKeyboardButton("📅 Bugun", callback_data=f"myreport_{worker['id']}_0"),
-             InlineKeyboardButton("3 kunlik", callback_data=f"myreport_{worker['id']}_3")],
-            [InlineKeyboardButton("7 kunlik", callback_data=f"myreport_{worker['id']}_7"),
-             InlineKeyboardButton("15 kunlik", callback_data=f"myreport_{worker['id']}_15")],
-            [InlineKeyboardButton("1 oylik", callback_data=f"myreport_{worker['id']}_30"),
-             InlineKeyboardButton("📅 Aniq sana", callback_data=f"myreport_{worker['id']}_custom")],
-        ])
-        await update.message.reply_text("Qaysi hisobotni ko'rmoqchisiz?", reply_markup=kb)
+        await update.message.reply_text("Hisobot turini tanlang:", reply_markup=get_report_keyboard())
         return
 
     # ── Oxirgini o'chir ──
@@ -308,6 +312,73 @@ async def handle_service(update: Update, context: ContextTypes.DEFAULT_TYPE):
              InlineKeyboardButton("📋 Ertangi qabullar", callback_data=f"appt_list_{worker['id']}_tomorrow")],
         ])
         await update.message.reply_text("📅 Mijoz qabul:", reply_markup=kb)
+        return
+
+    # ── Kategoriyalar ──
+    if text == "✂️ Xizmatlar":
+        await update.message.reply_text("Xizmatni tanlang:", reply_markup=get_services_keyboard())
+        return
+
+    if text == "📊 Hisobot":
+        await update.message.reply_text("Hisobot turini tanlang:", reply_markup=get_report_keyboard())
+        return
+
+    if text == "🔙 Orqaga":
+        await update.message.reply_text("Asosiy menyu:", reply_markup=get_worker_keyboard())
+        return
+
+    if text == "📊 Bugungi hisobot":
+        services = get_services_by_worker_date(worker["id"], today)
+        total = sum(s["total"] for s in services)
+        worker_share, _ = calc_percent(total)
+        work_day = get_work_day(worker["id"], today)
+        lines = [f"📊 {worker['name']} — Bugungi hisobot"]
+        lines.append(f"📅 {get_now().strftime('%d.%m.%Y')}")
+        if work_day and work_day.get("start_time"):
+            if work_day.get("end_time"):
+                lines.append(f"🕐 {work_day['start_time']} — {work_day['end_time']}")
+            else:
+                lines.append(f"🕐 Boshlash: {work_day['start_time']}")
+        lines.append("")
+        if services:
+            for s in services:
+                lines.append(f"{s['service_name']} × {s['cnt']} — {format_money(s['total'])}")
+            lines.append("")
+            lines.append("─" * 25)
+            lines.append(f"💰 Jami: {format_money(total)}")
+            lines.append(f"👤 Sizniki (70%): {format_money(worker_share)}")
+        else:
+            lines.append("Bugun hali xizmat kiritilmagan.")
+        await update.message.reply_text("\n".join(lines), reply_markup=get_report_keyboard())
+        return
+
+    if text == "📈 Shaxsiy rekord":
+        from database import get_conn
+        conn = get_conn()
+        c = conn.cursor()
+        c.execute(
+            "SELECT date, SUM(price) as total FROM services WHERE worker_id = %s "
+            "GROUP BY date ORDER BY total DESC LIMIT 1",
+            (worker["id"],)
+        )
+        row = c.fetchone()
+        conn.close()
+        if row:
+            d = datetime.strptime(row[0], "%Y-%m-%d").strftime("%d.%m.%Y")
+            lines = [f"📈 {worker['name']} — Shaxsiy rekord"]
+            lines.append(f"📅 {d}")
+            lines.append(f"💰 {format_money(row[1])}")
+            lines.append(f"👤 Sizniki (70%): {format_money(int(row[1]*0.7))}")
+            await update.message.reply_text("\n".join(lines), reply_markup=get_report_keyboard())
+        else:
+            await update.message.reply_text("Hali ma'lumot yo'q.", reply_markup=get_report_keyboard())
+        return
+
+    if text == "📅 Aniq sana hisoboti":
+        kb = InlineKeyboardMarkup([
+            [InlineKeyboardButton("📅 Aniq sana", callback_data=f"myreport_{worker['id']}_custom")],
+        ])
+        await update.message.reply_text("Qaysi davr?", reply_markup=kb)
         return
 
     # ── Yo'riqnoma (xodim) ──
@@ -777,29 +848,11 @@ async def handle_admin_message(update: Update, context: ContextTypes.DEFAULT_TYP
         return
 
     if text == "📅 Qabullar":
-        today = get_now().strftime("%Y-%m-%d")
-        today_label = get_now().strftime("%d.%m.%Y")
-        rows = get_all_appointments(today)
-        if not rows:
-            await update.message.reply_text(f"📅 Bugun ({today_label}) qabul yo'q.", reply_markup=get_admin_keyboard())
-        else:
-            lines = [f"📅 Bugungi qabullar — {today_label}\n"]
-            for row in rows:
-                lines.append(f"🕐 {row[2]} — {row[3]} ({row[1]})")
-            await update.message.reply_text("\n".join(lines), reply_markup=get_admin_keyboard())
-        return
-
-    if text == "📅 Ertangi qabullar":
-        tomorrow = (get_now() + timedelta(days=1)).strftime("%Y-%m-%d")
-        tomorrow_label = (get_now() + timedelta(days=1)).strftime("%d.%m.%Y")
-        rows = get_all_appointments(tomorrow)
-        if not rows:
-            await update.message.reply_text(f"📅 Ertaga ({tomorrow_label}) qabul yo'q.", reply_markup=get_admin_keyboard())
-        else:
-            lines = [f"📅 Ertangi qabullar — {tomorrow_label}\n"]
-            for row in rows:
-                lines.append(f"🕐 {row[2]} — {row[3]} ({row[1]})")
-            await update.message.reply_text("\n".join(lines), reply_markup=get_admin_keyboard())
+        kb = InlineKeyboardMarkup([
+            [InlineKeyboardButton("📅 Bugungi qabullar", callback_data="admin_appt_today"),
+             InlineKeyboardButton("📅 Ertangi qabullar", callback_data="admin_appt_tomorrow")]
+        ])
+        await update.message.reply_text("Qaysi kunni ko'rmoqchisiz?", reply_markup=kb)
         return
 
     if text == "📖 Yo'riqnoma":
@@ -1142,6 +1195,25 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             lines.append(f"👤 Sizniki (70%): {format_money(total_share)}")
 
         await query.edit_message_text("\n".join(lines))
+        return
+
+    if data in ["admin_appt_today", "admin_appt_tomorrow"]:
+        if data == "admin_appt_today":
+            date_str = get_now().strftime("%Y-%m-%d")
+            label = get_now().strftime("%d.%m.%Y")
+            title = "Bugungi"
+        else:
+            date_str = (get_now() + timedelta(days=1)).strftime("%Y-%m-%d")
+            label = (get_now() + timedelta(days=1)).strftime("%d.%m.%Y")
+            title = "Ertangi"
+        rows = get_all_appointments(date_str)
+        if not rows:
+            await query.edit_message_text(f"📅 {title} qabullar ({label}) yo'q.")
+        else:
+            lines = [f"📅 {title} qabullar — {label}\n"]
+            for row in rows:
+                lines.append(f"🕐 {row[2]} — {row[3]} ({row[1]})")
+            await query.edit_message_text("\n".join(lines))
         return
 
     if data.startswith("appt_new_"):
