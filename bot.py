@@ -20,6 +20,7 @@ from database import (
     get_services_by_worker_range, get_worker_summary_range,
     get_all_workers_summary_range, get_today_summary_all,
     workers_not_started, workers_not_ended, set_holiday,
+    add_appointment, get_appointments, get_all_appointments, delete_appointment,
     SERVICE_NAMES
 )
 
@@ -62,14 +63,15 @@ def get_worker_keyboard():
         [KeyboardButton("💆 Yuz tozalash"), KeyboardButton("🎭 Maska")],
         [KeyboardButton("🎨 Soch bo'yash"), KeyboardButton("🔧 Boshqa xizmat")],
         [KeyboardButton("🗑 Oxirgini o'chir"), KeyboardButton("📊 Hisobotim")],
-        [KeyboardButton("📈 Shaxsiy rekord"), KeyboardButton("👑 Admin panel")],
-        [KeyboardButton("📖 Yo'riqnoma")],
+        [KeyboardButton("📈 Shaxsiy rekord"), KeyboardButton("📅 Mijoz qabul")],
+        [KeyboardButton("👑 Admin panel"), KeyboardButton("📖 Yo'riqnoma")],
     ]
     return ReplyKeyboardMarkup(kb, resize_keyboard=True)
 
 def get_admin_keyboard():
     kb = [
         [KeyboardButton("👥 Masterlar"), KeyboardButton("📊 Umumiy hisobot")],
+        [KeyboardButton("📅 Qabullar"), KeyboardButton("📅 Ertangi qabullar")],
         [KeyboardButton("🏆 Eng yaxshi master"), KeyboardButton("💸 Oylik maosh")],
         [KeyboardButton("💬 Xodimga xabar"), KeyboardButton("📢 Hammaga xabar")],
         [KeyboardButton("📅 Dam olish kuni belgilash"), KeyboardButton("🗓 Dam olishni bekor qilish")],
@@ -298,6 +300,17 @@ async def handle_service(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await context.bot.send_sticker(chat_id=update.effective_chat.id, sticker=STICKER_LAUGH)
         return
 
+    # ── Mijoz qabul ──
+    if text == "📅 Mijoz qabul":
+        kb = InlineKeyboardMarkup([
+            [InlineKeyboardButton("📅 Bugun", callback_data=f"appt_new_{worker['id']}_today"),
+             InlineKeyboardButton("📅 Ertaga", callback_data=f"appt_new_{worker['id']}_tomorrow")],
+            [InlineKeyboardButton("📋 Bugungi qabullar", callback_data=f"appt_list_{worker['id']}_today"),
+             InlineKeyboardButton("📋 Ertangi qabullar", callback_data=f"appt_list_{worker['id']}_tomorrow")],
+        ])
+        await update.message.reply_text("📅 Mijoz qabul:", reply_markup=kb)
+        return
+
     # ── Yo'riqnoma (xodim) ──
     if text == "📖 Yo'riqnoma":
         await update.message.reply_text(
@@ -496,7 +509,7 @@ async def handle_admin_message(update: Update, context: ContextTypes.DEFAULT_TYP
         "📊 Umumiy hisobot", "👥 Masterlar", "➕ Xodim qo'shish",
         "❌ Xodim o'chirish", "📅 Dam olish kuni belgilash", "🗓 Dam olishni bekor qilish",
         "🏆 Eng yaxshi master", "💸 Oylik maosh", "💬 Xodimga xabar", "📢 Hammaga xabar",
-        "📖 Yo'riqnoma"
+        "📖 Yo'riqnoma", "📅 Qabullar", "📅 Ertangi qabullar"
     ]
     if text in MAIN_BUTTONS:
         admin_state.pop(user_id, None)
@@ -602,6 +615,31 @@ async def handle_admin_message(update: Update, context: ContextTypes.DEFAULT_TYP
             admin_state.pop(user_id)
         except Exception as e:
             await update.message.reply_text("❌ Xatolik yuz berdi. Qayta urinib ko'ring.")
+        return
+
+    if isinstance(state, dict) and state.get("step") == "waiting_client_name":
+        admin_state[user_id] = {**state, "step": "waiting_client_time", "client_name": text.strip()}
+        await update.message.reply_text(
+            f"Vaqtni kiriting (HH:MM):\nMasalan: 14:30"
+        )
+        return
+
+    if isinstance(state, dict) and state.get("step") == "waiting_client_time":
+        try:
+            datetime.strptime(text.strip(), "%H:%M")
+            time_str = text.strip()
+            worker_id = state["worker_id"]
+            date_str = state["date"]
+            label = state["label"]
+            client_name = state["client_name"]
+            add_appointment(worker_id, date_str, time_str, client_name)
+            admin_state.pop(user_id)
+            await update.message.reply_text(
+                f"✅ Saqlandi!\n📅 {label.capitalize()}\n🕐 {time_str} — {client_name}",
+                reply_markup=get_worker_keyboard()
+            )
+        except ValueError:
+            await update.message.reply_text("❌ Format xato! HH:MM kiriting\nMasalan: 14:30")
         return
 
     if isinstance(state, dict) and state.get("step") == "waiting_admin_fix_price":
@@ -713,6 +751,32 @@ async def handle_admin_message(update: Update, context: ContextTypes.DEFAULT_TYP
     if text == "🗓 Dam olishni bekor qilish":
         admin_state[user_id] = "waiting_remove_holiday"
         await update.message.reply_text("Bekor qilinadigan sanani kiriting (KK.OO.YYYY):\nMasalan: 09.06.2025")
+        return
+
+    if text == "📅 Qabullar":
+        today = get_now().strftime("%Y-%m-%d")
+        today_label = get_now().strftime("%d.%m.%Y")
+        rows = get_all_appointments(today)
+        if not rows:
+            await update.message.reply_text(f"📅 Bugun ({today_label}) qabul yo'q.", reply_markup=get_admin_keyboard())
+        else:
+            lines = [f"📅 Bugungi qabullar — {today_label}\n"]
+            for row in rows:
+                lines.append(f"🕐 {row[2]} — {row[3]} ({row[1]})")
+            await update.message.reply_text("\n".join(lines), reply_markup=get_admin_keyboard())
+        return
+
+    if text == "📅 Ertangi qabullar":
+        tomorrow = (get_now() + timedelta(days=1)).strftime("%Y-%m-%d")
+        tomorrow_label = (get_now() + timedelta(days=1)).strftime("%d.%m.%Y")
+        rows = get_all_appointments(tomorrow)
+        if not rows:
+            await update.message.reply_text(f"📅 Ertaga ({tomorrow_label}) qabul yo'q.", reply_markup=get_admin_keyboard())
+        else:
+            lines = [f"📅 Ertangi qabullar — {tomorrow_label}\n"]
+            for row in rows:
+                lines.append(f"🕐 {row[2]} — {row[3]} ({row[1]})")
+            await update.message.reply_text("\n".join(lines), reply_markup=get_admin_keyboard())
         return
 
     if text == "📖 Yo'riqnoma":
@@ -1055,6 +1119,88 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             lines.append(f"👤 Sizniki (70%): {format_money(total_share)}")
 
         await query.edit_message_text("\n".join(lines))
+        return
+
+    if data.startswith("appt_new_"):
+        parts = data.split("_")
+        worker_id = int(parts[2])
+        day = parts[3]
+        if day == "today":
+            date_str = get_now().strftime("%Y-%m-%d")
+            label = "bugun"
+        else:
+            date_str = (get_now() + timedelta(days=1)).strftime("%Y-%m-%d")
+            label = "ertaga"
+        admin_state[query.from_user.id] = {
+            "step": "waiting_client_name",
+            "worker_id": worker_id,
+            "date": date_str,
+            "label": label
+        }
+        await query.edit_message_text(f"📅 {label.capitalize()} uchun mijoz ismini kiriting:")
+        return
+
+    if data.startswith("appt_list_"):
+        parts = data.split("_")
+        worker_id = int(parts[2])
+        day = parts[3]
+        if day == "today":
+            date_str = get_now().strftime("%Y-%m-%d")
+            label = "Bugungi"
+        else:
+            date_str = (get_now() + timedelta(days=1)).strftime("%Y-%m-%d")
+            label = "Ertangi"
+        rows = get_appointments(worker_id, date_str)
+        if not rows:
+            kb = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Orqaga", callback_data=f"appt_back_{worker_id}")]])
+            await query.edit_message_text(f"📅 {label} qabullar yo'q.", reply_markup=kb)
+            return
+        lines = [f"📅 {label} qabullar:\n"]
+        kb = []
+        for row in rows:
+            lines.append(f"🕐 {row[1]} — {row[2]}")
+            kb.append([InlineKeyboardButton(f"❌ {row[1]} — {row[2]}", callback_data=f"appt_del_{row[0]}_{worker_id}_{day}")])
+        kb.append([InlineKeyboardButton("🔙 Orqaga", callback_data=f"appt_back_{worker_id}")])
+        await query.edit_message_text("\n".join(lines) + "\n\nO'chirish uchun bosing:", reply_markup=InlineKeyboardMarkup(kb))
+        return
+
+    if data.startswith("appt_del_"):
+        parts = data.split("_")
+        appt_id = int(parts[2])
+        worker_id = int(parts[3])
+        day = parts[4]
+        delete_appointment(appt_id)
+        await query.answer("✅ O'chirildi!")
+        # Refresh list
+        if day == "today":
+            date_str = get_now().strftime("%Y-%m-%d")
+            label = "Bugungi"
+        else:
+            date_str = (get_now() + timedelta(days=1)).strftime("%Y-%m-%d")
+            label = "Ertangi"
+        rows = get_appointments(worker_id, date_str)
+        if not rows:
+            kb = InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Orqaga", callback_data=f"appt_back_{worker_id}")]])
+            await query.edit_message_text(f"📅 {label} qabullar yo'q.", reply_markup=kb)
+            return
+        lines = [f"📅 {label} qabullar:\n"]
+        kb = []
+        for row in rows:
+            lines.append(f"🕐 {row[1]} — {row[2]}")
+            kb.append([InlineKeyboardButton(f"❌ {row[1]} — {row[2]}", callback_data=f"appt_del_{row[0]}_{worker_id}_{day}")])
+        kb.append([InlineKeyboardButton("🔙 Orqaga", callback_data=f"appt_back_{worker_id}")])
+        await query.edit_message_text("\n".join(lines) + "\n\nO'chirish uchun bosing:", reply_markup=InlineKeyboardMarkup(kb))
+        return
+
+    if data.startswith("appt_back_"):
+        worker_id = int(data.split("_")[2])
+        kb = InlineKeyboardMarkup([
+            [InlineKeyboardButton("📅 Bugun", callback_data=f"appt_new_{worker_id}_today"),
+             InlineKeyboardButton("📅 Ertaga", callback_data=f"appt_new_{worker_id}_tomorrow")],
+            [InlineKeyboardButton("📋 Bugungi qabullar", callback_data=f"appt_list_{worker_id}_today"),
+             InlineKeyboardButton("📋 Ertangi qabullar", callback_data=f"appt_list_{worker_id}_tomorrow")],
+        ])
+        await query.edit_message_text("📅 Mijoz qabul:", reply_markup=kb)
         return
 
     if data.startswith("adminfix_"):
