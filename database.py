@@ -46,6 +46,18 @@ def init_db():
         conn.rollback()
 
     c.execute("""
+        CREATE TABLE IF NOT EXISTS appointments (
+            id SERIAL PRIMARY KEY,
+            worker_id INTEGER NOT NULL,
+            date TEXT NOT NULL,
+            time TEXT NOT NULL,
+            client_name TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            FOREIGN KEY (worker_id) REFERENCES workers(id)
+        )
+    """)
+
+    c.execute("""
         CREATE TABLE IF NOT EXISTS services (
             id SERIAL PRIMARY KEY,
             worker_id INTEGER NOT NULL,
@@ -336,3 +348,48 @@ def get_today_summary_all():
     result = [dict_row(c, r) for r in rows]
     conn.close()
     return result
+
+
+# --- APPOINTMENTS ---
+
+def add_appointment(worker_id: int, date: str, time: str, client_name: str):
+    conn = get_conn()
+    now_str = get_now().strftime("%Y-%m-%d %H:%M:%S")
+    c = conn.cursor()
+    c.execute(
+        "INSERT INTO appointments (worker_id, date, time, client_name, created_at) VALUES (%s, %s, %s, %s, %s)",
+        (worker_id, date, time, client_name, now_str)
+    )
+    conn.commit()
+    conn.close()
+
+def get_appointments(worker_id: int, date: str):
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute(
+        "SELECT id, time, client_name FROM appointments WHERE worker_id = %s AND date = %s ORDER BY time",
+        (worker_id, date)
+    )
+    rows = c.fetchall()
+    conn.close()
+    return rows
+
+def get_all_appointments(date: str):
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute(
+        "SELECT a.id, w.name, a.time, a.client_name FROM appointments a "
+        "JOIN workers w ON a.worker_id = w.id "
+        "WHERE a.date = %s ORDER BY a.time",
+        (date,)
+    )
+    rows = c.fetchall()
+    conn.close()
+    return rows
+
+def delete_appointment(appointment_id: int):
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute("DELETE FROM appointments WHERE id = %s", (appointment_id,))
+    conn.commit()
+    conn.close()
