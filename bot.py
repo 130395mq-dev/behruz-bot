@@ -1,6 +1,6 @@
 import os
 import asyncio
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone, timedelta, time as dtime
 from dotenv import load_dotenv
 
 TZ = timezone(timedelta(hours=5))
@@ -24,6 +24,11 @@ from database import (
     SERVICE_NAMES
 )
 
+from amoria import (
+    amoria_worker_kb, amoria_admin_kb,
+    handle_amoria_worker, handle_amoria_admin, handle_amoria_callback,
+)
+
 load_dotenv()
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
@@ -37,6 +42,30 @@ ENTER_PRICE, ENTER_WORKER_ID, ENTER_WORKER_NAME, ENTER_REMOVE_ID, ENTER_HOLIDAY 
 
 def is_admin(user_id: int) -> bool:
     return user_id in ADMIN_IDS
+
+# ─── BIZNES TANLASH ───
+# Admin botga kirganda qaysi biznes bilan ishlashini tanlaydi.
+BUSINESS_BTN = {
+    "💈 Barbershop": "barbershop",
+    "🍸 Amoria Bar": "amoria_bar",
+    "👰 Amoria kelin libosi": "amoria_dress",
+    "🏛 Imperium": "imperium",
+}
+
+# Admin -> hozir tanlangan biznes
+current_business = {}
+
+def get_business_keyboard():
+    kb = [
+        [KeyboardButton("💈 Barbershop"), KeyboardButton("🍸 Amoria Bar")],
+        [KeyboardButton("👰 Amoria kelin libosi"), KeyboardButton("🏛 Imperium")],
+    ]
+    return ReplyKeyboardMarkup(kb, resize_keyboard=True)
+
+def get_admin_kb_for(biz):
+    if biz == "amoria_bar":
+        return amoria_admin_kb()
+    return get_admin_keyboard()
 
 def format_money(amount) -> str:
     if amount is None:
@@ -107,18 +136,26 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
 
     if is_admin(user_id):
+        current_business.pop(user_id, None)
         await update.message.reply_text(
-            "👑 Xush kelibsiz, Behruz aka!\nSoqqani bosaylik! 💈",
-            reply_markup=get_admin_keyboard()
+            "👑 Xush kelibsiz, Behruz aka!\n🏢 Qaysi biznes bilan ishlaymiz?",
+            reply_markup=get_business_keyboard()
         )
         return
 
     worker = get_worker(user_id)
     if worker:
-        await update.message.reply_text(
-            f"Salom, {worker['name']}! 💈\nBugun ham zo'r ish qiling!",
-            reply_markup=get_worker_keyboard()
-        )
+        biz = worker.get("business") or "barbershop"
+        if biz == "amoria_bar":
+            await update.message.reply_text(
+                f"🍸 Salom, {worker['name']}! Amoria Bar.",
+                reply_markup=amoria_worker_kb()
+            )
+        else:
+            await update.message.reply_text(
+                f"Salom, {worker['name']}! 💈\nBugun ham zo'r ish qiling!",
+                reply_markup=get_worker_keyboard()
+            )
     else:
         await update.message.reply_text(
             "❌ Siz tizimda ro'yxatdan o'tmagansiz.\nAdmin bilan bog'laning."
@@ -142,12 +179,53 @@ async def handle_service(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
 
     if is_admin(user_id):
-        await handle_admin_message(update, context)
+        # ── Biznes tanlash ──
+        if text in BUSINESS_BTN:
+            biz = BUSINESS_BTN[text]
+            admin_state.pop(user_id, None)
+            if biz == "barbershop":
+                current_business[user_id] = biz
+                await update.message.reply_text("💈 Barbershop", reply_markup=get_admin_keyboard())
+            elif biz == "amoria_bar":
+                current_business[user_id] = biz
+                await update.message.reply_text("🍸 Amoria Bar", reply_markup=amoria_admin_kb())
+            else:
+                # hali tayyor emas — menyuda qoldiramiz
+                current_business.pop(user_id, None)
+                name = "👰 Amoria kelin libosi" if biz == "amoria_dress" else "🏛 Imperium"
+                await update.message.reply_text(
+                    f"{name}\n\n🛠 Bu bo'lim tez kunda tayyor bo'ladi.",
+                    reply_markup=get_business_keyboard()
+                )
+            return
+
+        if text == "🏢 Biznes almashtirish":
+            current_business.pop(user_id, None)
+            admin_state.pop(user_id, None)
+            await update.message.reply_text("🏢 Qaysi biznes bilan ishlaymiz?", reply_markup=get_business_keyboard())
+            return
+
+        biz = current_business.get(user_id)
+        if not biz:
+            await update.message.reply_text("🏢 Avval biznesni tanlang:", reply_markup=get_business_keyboard())
+            return
+        if biz == "barbershop":
+            await handle_admin_message(update, context)
+        elif biz == "amoria_bar":
+            await handle_amoria_admin(update, context)
+        else:
+            current_business.pop(user_id, None)
+            await update.message.reply_text("🛠 Tez kunda.", reply_markup=get_business_keyboard())
         return
 
     worker = get_worker(user_id)
     if not worker:
         await update.message.reply_text("❌ Siz tizimda yo'qsiz.")
+        return
+
+    # ── Amoria Bar xodimi ──
+    if (worker.get("business") or "barbershop") == "amoria_bar":
+        await handle_amoria_worker(update, context, worker)
         return
 
     today = get_now().strftime("%Y-%m-%d")
@@ -908,6 +986,12 @@ async def handle_admin_message(update: Update, context: ContextTypes.DEFAULT_TYP
 
 async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
+
+    # ── Amoria Bar callbacklari ──
+    if query.data and query.data.startswith("am_"):
+        await handle_amoria_callback(update, context)
+        return
+
     await query.answer()
     data = query.data
 
@@ -1585,11 +1669,11 @@ def main():
     app.add_handler(CallbackQueryHandler(callback_handler))
 
     jq = app.job_queue
-    jq.run_daily(auto_close_days, time=datetime.strptime("00:01", "%H:%M").time())
-    jq.run_daily(morning_greeting, time=datetime.strptime("09:00", "%H:%M").time())
-    jq.run_daily(reminder_not_started, time=datetime.strptime("10:00", "%H:%M").time())
-    jq.run_daily(reminder_not_ended, time=datetime.strptime("20:00", "%H:%M").time())
-    jq.run_daily(evening_admin_report, time=datetime.strptime("21:00", "%H:%M").time())
+    jq.run_daily(auto_close_days, time=dtime(0, 1, tzinfo=TZ))
+    jq.run_daily(morning_greeting, time=dtime(9, 0, tzinfo=TZ))
+    jq.run_daily(reminder_not_started, time=dtime(10, 0, tzinfo=TZ))
+    jq.run_daily(reminder_not_ended, time=dtime(20, 0, tzinfo=TZ))
+    jq.run_daily(evening_admin_report, time=dtime(21, 0, tzinfo=TZ))
 
     print("Bot ishga tushdi! ✅")
     app.run_polling(drop_pending_updates=True, allowed_updates=Update.ALL_TYPES, close_loop=False)
