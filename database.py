@@ -22,9 +22,16 @@ def init_db():
             id SERIAL PRIMARY KEY,
             telegram_id BIGINT UNIQUE NOT NULL,
             name TEXT NOT NULL,
-            is_active INTEGER DEFAULT 1
+            is_active INTEGER DEFAULT 1,
+            business TEXT DEFAULT 'barbershop'
         )
     """)
+    # Add business column if not exists (for existing databases)
+    try:
+        c.execute("ALTER TABLE workers ADD COLUMN business TEXT DEFAULT 'barbershop'")
+        conn.commit()
+    except:
+        conn.rollback()
 
     c.execute("""
         CREATE TABLE IF NOT EXISTS work_days (
@@ -69,6 +76,31 @@ def init_db():
         )
     """)
 
+    # ── AMORIA BAR — foto zona band qilish (kelin-kuyov) ──
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS amoria_bookings (
+            id SERIAL PRIMARY KEY,
+            worker_id INTEGER,
+            client_name TEXT NOT NULL,
+            phone TEXT,
+            date TEXT NOT NULL,
+            price INTEGER NOT NULL DEFAULT 0,
+            deposit INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL
+        )
+    """)
+
+    # ── AMORIA BAR — disko bar kunlik tushum ──
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS amoria_disco (
+            id SERIAL PRIMARY KEY,
+            worker_id INTEGER,
+            date TEXT NOT NULL,
+            amount INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL
+        )
+    """)
+
     conn.commit()
     conn.close()
 
@@ -78,14 +110,15 @@ def dict_row(cursor, row):
 
 # --- WORKERS ---
 
-def add_worker(telegram_id: int, name: str):
+def add_worker(telegram_id: int, name: str, business: str = "barbershop"):
     conn = get_conn()
     try:
         c = conn.cursor()
-        c.execute("INSERT INTO workers (telegram_id, name) VALUES (%s, %s)", (telegram_id, name))
+        c.execute("INSERT INTO workers (telegram_id, name, business) VALUES (%s, %s, %s)", (telegram_id, name, business))
         conn.commit()
         return True
     except psycopg2.IntegrityError:
+        conn.rollback()
         return False
     finally:
         conn.close()
@@ -106,10 +139,10 @@ def get_worker(telegram_id: int):
     conn.close()
     return result
 
-def get_all_workers():
+def get_all_workers(business: str = "barbershop"):
     conn = get_conn()
     c = conn.cursor()
-    c.execute("SELECT * FROM workers WHERE is_active = 1")
+    c.execute("SELECT * FROM workers WHERE is_active = 1 AND COALESCE(business, 'barbershop') = %s", (business,))
     rows = c.fetchall()
     result = [dict_row(c, r) for r in rows]
     conn.close()
@@ -196,7 +229,7 @@ def get_all_sessions(worker_id: int, date: str):
 def set_holiday(date: str):
     conn = get_conn()
     c = conn.cursor()
-    c.execute("SELECT id FROM workers WHERE is_active = 1")
+    c.execute("SELECT id FROM workers WHERE is_active = 1 AND COALESCE(business, 'barbershop') = 'barbershop'")
     workers = c.fetchall()
     for w in workers:
         c.execute("SELECT * FROM work_days WHERE worker_id = %s AND date = %s", (w[0], date))
@@ -211,7 +244,7 @@ def workers_not_started():
     c = conn.cursor()
     c.execute("SELECT worker_id FROM work_days WHERE date = %s AND start_time IS NOT NULL", (today,))
     started_ids = [r[0] for r in c.fetchall()]
-    c.execute("SELECT * FROM workers WHERE is_active = 1")
+    c.execute("SELECT * FROM workers WHERE is_active = 1 AND COALESCE(business, 'barbershop') = 'barbershop'")
     rows = c.fetchall()
     all_workers = [dict_row(c, r) for r in rows]
     conn.close()
@@ -223,7 +256,8 @@ def workers_not_ended():
     c = conn.cursor()
     c.execute(
         "SELECT w.* FROM workers w JOIN work_days wd ON w.id = wd.worker_id "
-        "WHERE wd.date = %s AND wd.start_time IS NOT NULL AND wd.end_time IS NULL AND w.is_active = 1",
+        "WHERE wd.date = %s AND wd.start_time IS NOT NULL AND wd.end_time IS NULL AND w.is_active = 1 "
+        "AND COALESCE(w.business, 'barbershop') = 'barbershop'",
         (today,)
     )
     rows = c.fetchall()
@@ -322,7 +356,8 @@ def get_all_workers_summary_range(days: int):
         "SELECT w.id, w.name, w.telegram_id, COALESCE(SUM(s.price), 0) as total "
         "FROM workers w LEFT JOIN services s ON w.id = s.worker_id "
         "AND s.date::date >= CURRENT_DATE - INTERVAL '1 day' * %s "
-        "WHERE w.is_active = 1 GROUP BY w.id, w.name, w.telegram_id ORDER BY total DESC",
+        "WHERE w.is_active = 1 AND COALESCE(w.business, 'barbershop') = 'barbershop' "
+        "GROUP BY w.id, w.name, w.telegram_id ORDER BY total DESC",
         (days - 1,)
     )
     rows = c.fetchall()
@@ -341,7 +376,8 @@ def get_today_summary_all():
         "FROM workers w "
         "LEFT JOIN work_days wd ON w.id = wd.worker_id AND wd.date = %s "
         "LEFT JOIN services s ON w.id = s.worker_id AND s.date = %s "
-        "WHERE w.is_active = 1 GROUP BY w.id, w.name, w.telegram_id, wd.start_time, wd.end_time",
+        "WHERE w.is_active = 1 AND COALESCE(w.business, 'barbershop') = 'barbershop' "
+        "GROUP BY w.id, w.name, w.telegram_id, wd.start_time, wd.end_time",
         (today, today)
     )
     rows = c.fetchall()
@@ -393,3 +429,104 @@ def delete_appointment(appointment_id: int):
     c.execute("DELETE FROM appointments WHERE id = %s", (appointment_id,))
     conn.commit()
     conn.close()
+
+
+# ─── AMORIA BAR ───
+
+def get_amoria_workers():
+    return get_all_workers("amoria_bar")
+
+# --- Foto zona band qilish ---
+
+def add_amoria_booking(worker_id, client_name, phone, date, price, deposit):
+    conn = get_conn()
+    now_str = get_now().strftime("%Y-%m-%d %H:%M:%S")
+    c = conn.cursor()
+    c.execute(
+        "INSERT INTO amoria_bookings (worker_id, client_name, phone, date, price, deposit, created_at) "
+        "VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id",
+        (worker_id, client_name, phone, date, price, deposit, now_str)
+    )
+    bid = c.fetchone()[0]
+    conn.commit()
+    conn.close()
+    return bid
+
+def get_amoria_booking(booking_id):
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute("SELECT * FROM amoria_bookings WHERE id = %s", (booking_id,))
+    row = c.fetchone()
+    result = dict_row(c, row) if row else None
+    conn.close()
+    return result
+
+def delete_amoria_booking(booking_id):
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute("DELETE FROM amoria_bookings WHERE id = %s", (booking_id,))
+    conn.commit()
+    conn.close()
+
+def get_amoria_bookings_range(date_from, date_to):
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute(
+        "SELECT * FROM amoria_bookings WHERE date BETWEEN %s AND %s ORDER BY date, id",
+        (date_from, date_to)
+    )
+    rows = c.fetchall()
+    result = [dict_row(c, r) for r in rows]
+    conn.close()
+    return result
+
+def get_amoria_bookings_upcoming(from_date):
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute(
+        "SELECT * FROM amoria_bookings WHERE date >= %s ORDER BY date, id",
+        (from_date,)
+    )
+    rows = c.fetchall()
+    result = [dict_row(c, r) for r in rows]
+    conn.close()
+    return result
+
+# --- Disko bar kunlik tushum ---
+
+def add_amoria_disco(worker_id, date, amount):
+    conn = get_conn()
+    now_str = get_now().strftime("%Y-%m-%d %H:%M:%S")
+    c = conn.cursor()
+    c.execute(
+        "INSERT INTO amoria_disco (worker_id, date, amount, created_at) VALUES (%s, %s, %s, %s)",
+        (worker_id, date, amount, now_str)
+    )
+    conn.commit()
+    conn.close()
+
+def get_amoria_disco_range(date_from, date_to):
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute(
+        "SELECT date, SUM(amount) as total FROM amoria_disco "
+        "WHERE date BETWEEN %s AND %s GROUP BY date ORDER BY date",
+        (date_from, date_to)
+    )
+    rows = c.fetchall()
+    result = [dict_row(c, r) for r in rows]
+    conn.close()
+    return result
+
+def delete_last_amoria_disco(worker_id, date):
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute("SELECT id FROM amoria_disco WHERE worker_id = %s AND date = %s ORDER BY id DESC LIMIT 1", (worker_id, date))
+    row = c.fetchone()
+    if row:
+        c.execute("DELETE FROM amoria_disco WHERE id = %s", (row[0],))
+        conn.commit()
+        conn.close()
+        return True
+    conn.close()
+    return False
