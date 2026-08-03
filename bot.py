@@ -29,6 +29,13 @@ from amoria import (
     handle_amoria_worker, handle_amoria_admin, handle_amoria_callback,
 )
 
+from dress import (
+    BIZ_CONF, dress_worker_kb, dress_admin_kb,
+    handle_dress_worker, handle_dress_admin, handle_dress_callback,
+    dress_state,
+)
+from amoria import amoria_state
+
 load_dotenv()
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
@@ -65,6 +72,8 @@ def get_business_keyboard():
 def get_admin_kb_for(biz):
     if biz == "amoria_bar":
         return amoria_admin_kb()
+    if biz in BIZ_CONF:
+        return dress_admin_kb()
     return get_admin_keyboard()
 
 def format_money(amount) -> str:
@@ -152,6 +161,11 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"🍸 Salom, {worker['name']}! Amoria Bar.",
                 reply_markup=amoria_worker_kb()
             )
+        elif biz in BIZ_CONF:
+            await update.message.reply_text(
+                f"Salom, {worker['name']}! {BIZ_CONF[biz]['title']}.",
+                reply_markup=dress_worker_kb()
+            )
         else:
             await update.message.reply_text(
                 f"Salom, {worker['name']}! 💈\nBugun ham zo'r ish qiling!",
@@ -184,6 +198,8 @@ async def handle_service(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if text in BUSINESS_BTN:
             biz = BUSINESS_BTN[text]
             admin_state.pop(user_id, None)
+            amoria_state.pop(user_id, None)
+            dress_state.pop(user_id, None)
             if biz == "barbershop":
                 current_business[user_id] = biz
                 await update.message.reply_text("💈 Barbershop", reply_markup=get_admin_keyboard())
@@ -191,18 +207,15 @@ async def handle_service(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 current_business[user_id] = biz
                 await update.message.reply_text("🍸 Amoria Bar", reply_markup=amoria_admin_kb())
             else:
-                # hali tayyor emas — menyuda qoldiramiz
-                current_business.pop(user_id, None)
-                name = "👰 Amoria kelin libosi" if biz == "amoria_dress" else "🏛 Imperium"
-                await update.message.reply_text(
-                    f"{name}\n\n🛠 Bu bo'lim tez kunda tayyor bo'ladi.",
-                    reply_markup=get_business_keyboard()
-                )
+                current_business[user_id] = biz
+                await update.message.reply_text(BIZ_CONF[biz]["title"], reply_markup=dress_admin_kb())
             return
 
         if text == "🏢 Biznes almashtirish":
             current_business.pop(user_id, None)
             admin_state.pop(user_id, None)
+            amoria_state.pop(user_id, None)
+            dress_state.pop(user_id, None)
             await update.message.reply_text("🏢 Qaysi biznes bilan ishlaymiz?", reply_markup=get_business_keyboard())
             return
 
@@ -214,9 +227,11 @@ async def handle_service(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await handle_admin_message(update, context)
         elif biz == "amoria_bar":
             await handle_amoria_admin(update, context)
+        elif biz in BIZ_CONF:
+            await handle_dress_admin(update, context, biz)
         else:
             current_business.pop(user_id, None)
-            await update.message.reply_text("🛠 Tez kunda.", reply_markup=get_business_keyboard())
+            await update.message.reply_text("🏢 Avval biznesni tanlang:", reply_markup=get_business_keyboard())
         return
 
     worker = get_worker(user_id)
@@ -225,8 +240,14 @@ async def handle_service(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     # ── Amoria Bar xodimi ──
-    if (worker.get("business") or "barbershop") == "amoria_bar":
+    worker_biz = worker.get("business") or "barbershop"
+    if worker_biz == "amoria_bar":
         await handle_amoria_worker(update, context, worker)
+        return
+
+    # ── Kelin libosi / Imperium xodimi ──
+    if worker_biz in BIZ_CONF:
+        await handle_dress_worker(update, context, worker)
         return
 
     today = get_now().strftime("%Y-%m-%d")
@@ -992,6 +1013,10 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # ── Amoria Bar callbacklari ──
     if query.data and query.data.startswith("am_"):
         await handle_amoria_callback(update, context)
+        return
+
+    if query.data and query.data.startswith("dr_"):
+        await handle_dress_callback(update, context)
         return
 
     await query.answer()

@@ -101,6 +101,18 @@ def init_db():
         )
     """)
 
+    # ── KELIN LIBOSI / IMPERIUM — kiyim savdolari ──
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS dress_sales (
+            id SERIAL PRIMARY KEY,
+            business TEXT NOT NULL,
+            worker_id INTEGER,
+            date TEXT NOT NULL,
+            price INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL
+        )
+    """)
+
     conn.commit()
     conn.close()
 
@@ -512,6 +524,65 @@ def get_amoria_disco_range(date_from, date_to):
         "SELECT date, SUM(amount) as total FROM amoria_disco "
         "WHERE date BETWEEN %s AND %s GROUP BY date ORDER BY date",
         (date_from, date_to)
+    )
+    rows = c.fetchall()
+    result = [dict_row(c, r) for r in rows]
+    conn.close()
+    return result
+
+# ─── KELIN LIBOSI / IMPERIUM — kiyim savdolari ───
+
+def add_dress_sale(business, worker_id, date, price):
+    conn = get_conn()
+    now_str = get_now().strftime("%Y-%m-%d %H:%M:%S")
+    c = conn.cursor()
+    c.execute(
+        "INSERT INTO dress_sales (business, worker_id, date, price, created_at) "
+        "VALUES (%s, %s, %s, %s, %s) RETURNING id",
+        (business, worker_id, date, price, now_str)
+    )
+    sid = c.fetchone()[0]
+    conn.commit()
+    conn.close()
+    return sid
+
+def get_dress_sale(sale_id):
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute("SELECT * FROM dress_sales WHERE id = %s", (sale_id,))
+    row = c.fetchone()
+    result = dict_row(c, row) if row else None
+    conn.close()
+    return result
+
+def delete_dress_sale(sale_id):
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute("DELETE FROM dress_sales WHERE id = %s", (sale_id,))
+    conn.commit()
+    conn.close()
+
+def get_dress_sales_range(business, date_from, date_to):
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute(
+        "SELECT ds.*, w.name as worker_name FROM dress_sales ds "
+        "LEFT JOIN workers w ON ds.worker_id = w.id "
+        "WHERE ds.business = %s AND ds.date BETWEEN %s AND %s ORDER BY ds.date, ds.id",
+        (business, date_from, date_to)
+    )
+    rows = c.fetchall()
+    result = [dict_row(c, r) for r in rows]
+    conn.close()
+    return result
+
+def get_dress_sales_by_worker(business, worker_id, limit=10):
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute(
+        "SELECT * FROM dress_sales WHERE business = %s AND worker_id = %s "
+        "ORDER BY id DESC LIMIT %s",
+        (business, worker_id, limit)
     )
     rows = c.fetchall()
     result = [dict_row(c, r) for r in rows]
