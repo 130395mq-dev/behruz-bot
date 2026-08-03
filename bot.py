@@ -7,7 +7,7 @@ TZ = timezone(timedelta(hours=5))
 
 def get_now():
     return datetime.now(TZ)
-from telegram import Update, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
+from telegram import Update, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import (
     Application, CommandHandler, MessageHandler, CallbackQueryHandler,
     ContextTypes, filters, ConversationHandler
@@ -62,15 +62,11 @@ BUSINESS_BTN = {
 # Admin -> hozir tanlangan biznes
 current_business = {}
 
-WEBAPP_URL = os.getenv("WEBAPP_URL", "")
-
 def get_business_keyboard():
     kb = [
         [KeyboardButton("💈 Barbershop"), KeyboardButton("🍸 Amoria Bar")],
         [KeyboardButton("👰 Amoria kelin libosi"), KeyboardButton("🏛 Imperium")],
     ]
-    if WEBAPP_URL:
-        kb.append([KeyboardButton("📊 Dashboard", web_app=WebAppInfo(url=WEBAPP_URL))])
     return ReplyKeyboardMarkup(kb, resize_keyboard=True)
 
 def get_admin_kb_for(biz):
@@ -155,13 +151,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "👑 Xush kelibsiz, Behruz aka!\n🏢 Qaysi biznes bilan ishlaymiz?",
             reply_markup=get_business_keyboard()
         )
-        if WEBAPP_URL:
-            await update.message.reply_text(
-                "📊 Barcha bizneslar hisoboti bir joyda:",
-                reply_markup=InlineKeyboardMarkup([[
-                    InlineKeyboardButton("📊 Dashboard ochish", web_app=WebAppInfo(url=WEBAPP_URL))
-                ]])
-            )
         return
 
     worker = get_worker(user_id)
@@ -1651,8 +1640,7 @@ async def reminder_not_ended(context: ContextTypes.DEFAULT_TYPE):
 
 # ─── MAIN ───
 
-async def run_all():
-    """Bot (polling) va Mini App veb-serverini bitta jarayonda ishga tushiradi."""
+def main():
     init_db()
     app = Application.builder().token(BOT_TOKEN).build()
 
@@ -1666,24 +1654,8 @@ async def run_all():
     jq.run_daily(reminder_not_started, time=dtime(10, 0, tzinfo=TZ))
     jq.run_daily(reminder_not_ended, time=dtime(20, 0, tzinfo=TZ))
 
-    await app.initialize()
-    await app.start()
-    await app.updater.start_polling(drop_pending_updates=True, allowed_updates=Update.ALL_TYPES)
     print("Bot ishga tushdi! ✅")
-
-    import uvicorn
-    from web import app as web_app
-    port = int(os.getenv("PORT", "8080"))
-    server = uvicorn.Server(uvicorn.Config(web_app, host="0.0.0.0", port=port, log_level="warning"))
-    print(f"Mini App server: {port}-portda ✅")
-    await server.serve()
-
-    await app.updater.stop()
-    await app.stop()
-    await app.shutdown()
-
-def main():
-    asyncio.run(run_all())
+    app.run_polling(drop_pending_updates=True, allowed_updates=Update.ALL_TYPES, close_loop=False)
 
 if __name__ == "__main__":
     main()
