@@ -118,6 +118,7 @@ def get_admin_keyboard():
         [KeyboardButton("📢 Hammaga xabar"), KeyboardButton("📅 Dam olish kuni belgilash")],
         [KeyboardButton("🗓 Dam olishni bekor qilish"), KeyboardButton("➕ Xodim qo'shish")],
         [KeyboardButton("❌ Xodim o'chirish"), KeyboardButton("📖 Yo'riqnoma")],
+        [KeyboardButton("🏢 Biznes almashtirish")],
     ]
     return ReplyKeyboardMarkup(kb, resize_keyboard=True)
 
@@ -945,7 +946,8 @@ async def handle_admin_message(update: Update, context: ContextTypes.DEFAULT_TYP
             "📅 Dam olish kuni belgilash — O'sha kuni xodimlar ishlamaydi\n"
             "🗓 Dam olishni bekor qilish — Dam olish kunini olib tashlash\n\n"
             "➕ Xodim qo'shish — Yangi xodim Telegram ID si va ismini kiriting\n"
-            "❌ Xodim o'chirish — Xodimni tizimdan o'chirish",
+            "❌ Xodim o'chirish — Xodimni tizimdan o'chirish\n\n"
+            "🏢 Biznes almashtirish — Boshqa biznesga o'tish",
             reply_markup=get_admin_keyboard()
         )
         return
@@ -1611,53 +1613,6 @@ async def reminder_not_ended(context: ContextTypes.DEFAULT_TYPE):
         except:
             pass
 
-async def evening_admin_report(context: ContextTypes.DEFAULT_TYPE):
-    for aid in ADMIN_IDS:
-        try:
-            await context.bot.send_message(
-                chat_id=aid,
-                text="🌙 Behruz aka, soqqa ko'payib ketdi!\nPullarni ko'ring! 💰😄"
-            )
-        except:
-            pass
-
-    summary = get_today_summary_all()
-    total_all = sum(w["total"] or 0 for w in summary)
-    _, owner_total = calc_percent(total_all)
-
-    today = get_now().strftime("%d.%m.%Y")
-    lines = [f"📊 Kun yakunlandi — {today}\n"]
-
-    for w in summary:
-        total = w["total"] or 0
-        _, o_share = calc_percent(total)
-        worker_id = w["id"]
-
-        from database import get_services_by_worker_date
-        services = get_services_by_worker_date(worker_id, get_now().strftime("%Y-%m-%d"))
-
-        time_info = ""
-        if w["start_time"]:
-            time_info = f"\n🕐 {w['start_time']}"
-            if w["end_time"]:
-                time_info += f" — {w['end_time']}"
-
-        lines.append(f"👤 {w['name']}{time_info}")
-        for s in services:
-            lines.append(f"  {s['service_name']} × {s['cnt']} — {format_money(s['total'])}")
-        lines.append(f"  💰 Jami: {format_money(total)} | 👑 Egasiga: {format_money(o_share)}")
-        lines.append("")
-
-    lines.append("─" * 25)
-    lines.append(f"💰 Umumiy: {format_money(total_all)}")
-    lines.append(f"👑 Egasiga jami: {format_money(owner_total)}")
-
-    for aid in ADMIN_IDS:
-        try:
-            await context.bot.send_message(chat_id=aid, text="\n".join(lines))
-        except:
-            pass
-
 # ─── MAIN ───
 
 def main():
@@ -1673,7 +1628,6 @@ def main():
     jq.run_daily(morning_greeting, time=dtime(9, 0, tzinfo=TZ))
     jq.run_daily(reminder_not_started, time=dtime(10, 0, tzinfo=TZ))
     jq.run_daily(reminder_not_ended, time=dtime(20, 0, tzinfo=TZ))
-    jq.run_daily(evening_admin_report, time=dtime(21, 0, tzinfo=TZ))
 
     print("Bot ishga tushdi! ✅")
     app.run_polling(drop_pending_updates=True, allowed_updates=Update.ALL_TYPES, close_loop=False)
