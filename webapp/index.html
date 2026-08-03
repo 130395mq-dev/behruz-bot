@@ -171,7 +171,11 @@
   }
   .segments button:active { transform: scale(.95); }
   .segments button:focus-visible { outline: 2px solid var(--teal); outline-offset: 1px; }
-  .segments button[aria-pressed="true"] { background: var(--teal); color: #fff; box-shadow: 0 3px 10px color-mix(in srgb, var(--teal) 40%, transparent); }
+  .segments button[aria-pressed="true"] { background: var(--seg, var(--teal)); color: #fff; box-shadow: 0 3px 10px color-mix(in srgb, var(--seg, var(--teal)) 40%, transparent); }
+  #tab-barber   { --seg: var(--barber); }
+  #tab-bar      { --seg: var(--bar); }
+  #tab-dress    { --seg: var(--dress); }
+  #tab-imperium { --seg: var(--imperium); }
 
   .card {
     background: var(--surface); border: 1px solid var(--ring); border-radius: 20px;
@@ -713,9 +717,9 @@
     renderBiz(currentPeriod);
     syncSegments();
     el("live-label").textContent = isLive ? "jonli" : "namuna";
-    el("note").innerHTML = isLive
+    el("note").innerHTML = (isLive
       ? "Ma'lumotlar bot bazasidan jonli olinmoqda."
-      : "Namunaviy ma'lumotlar — server bilan aloqa yo'q." + (lastErr ? " (xato: " + lastErr + ")" : "");
+      : "Namunaviy ma'lumotlar — server bilan aloqa yo'q." + (lastErr ? " (xato: " + lastErr + ")" : "")) + " · v3";
   }
   function replay() {
     appEl.classList.remove("play");
@@ -768,7 +772,11 @@
       const res = await fetch(`/api/dashboard?days=${days}`, {
         headers: { "X-Telegram-Init-Data": tg ? tg.initData : "" }
       });
-      if (!res.ok) throw new Error(res.status);
+      if (!res.ok) {
+        let detail = "";
+        try { detail = (await res.json()).detail || ""; } catch (e) {}
+        throw new Error(res.status + (detail ? " — " + detail : ""));
+      }
       const json = await res.json();
       DATA = apiToData(json);
       isLive = true;

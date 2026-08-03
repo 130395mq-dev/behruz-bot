@@ -54,9 +54,17 @@ def validate_init_data(init_data: str):
 
 
 def require_admin(init_data: str):
+    if not init_data:
+        print("Dashboard auth: initData bo'sh keldi")
+        raise HTTPException(status_code=403, detail="initData yo'q")
     user = validate_init_data(init_data)
-    if not user or int(user.get("id", 0)) not in ADMIN_IDS:
+    if not user:
+        print(f"Dashboard auth: imzo mos kelmadi (len={len(init_data)})")
+        raise HTTPException(status_code=403, detail="Imzo xato")
+    if int(user.get("id", 0)) not in ADMIN_IDS:
+        print(f"Dashboard auth: admin emas, id={user.get('id')}")
         raise HTTPException(status_code=403, detail="Ruxsat yo'q")
+    print(f"Dashboard auth: OK, id={user.get('id')}")
     return user
 
 
