@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>MYBUSINESS — Egasi paneli</title>
-<script src="https://telegram.org/js/telegram-web-app.js" defer></script>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
 <style>
   :root {
     color-scheme: light;
@@ -715,7 +715,7 @@
     el("live-label").textContent = isLive ? "jonli" : "namuna";
     el("note").innerHTML = isLive
       ? "Ma'lumotlar bot bazasidan jonli olinmoqda."
-      : "Namunaviy ma'lumotlar — server bilan aloqa yo'q.";
+      : "Namunaviy ma'lumotlar — server bilan aloqa yo'q." + (lastErr ? " (xato: " + lastErr + ")" : "");
   }
   function replay() {
     appEl.classList.remove("play");
@@ -741,10 +741,10 @@
   });
 
   // ── Server bilan aloqa ──
-  const tg = window.Telegram && window.Telegram.WebApp;
+  const getTg = () => (window.Telegram && window.Telegram.WebApp) || null;
   function apiToData(json) {
-    // API javobini frontend formatiga o'girish
-    const out = { ...SAMPLE };
+    // API javobini frontend formatiga o'girish (boshqa davrlar o'z holicha qoladi)
+    const out = { ...DATA };
     const periodKey = currentPeriod;
     out[periodKey] = {
       label: json.label,
@@ -763,6 +763,7 @@
   }
   async function loadData() {
     try {
+      const tg = getTg();
       const days = PERIOD_DAYS[currentPeriod];
       const res = await fetch(`/api/dashboard?days=${days}`, {
         headers: { "X-Telegram-Init-Data": tg ? tg.initData : "" }
@@ -775,18 +776,23 @@
       if (json.owner_name) el("owner-name").textContent = json.owner_name;
     } catch (err) {
       isLive = false;
+      lastErr = String(err && err.message || err);
       el("live-badge").hidden = false;
     }
   }
+  let lastErr = "";
 
   el("refresh-btn").addEventListener("click", () => loadData().then(() => { replay(); render(); }));
 
   // ── Boshlash ──
-  if (tg) { try { tg.ready(); tg.expand(); } catch (e) {} }
+  const tg0 = getTg();
+  if (tg0) { try { tg0.ready(); tg0.expand(); } catch (e) {} }
   buildTabs();
   render();
   appEl.classList.add("play");
   loadData().then(render);
+  // Telegram skripti kechikib yuklansa — qayta urinamiz
+  addEventListener("load", () => { if (!isLive) loadData().then(render); });
 
   matchMedia("(prefers-color-scheme: dark)").addEventListener("change", render);
   new MutationObserver(render).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
