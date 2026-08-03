@@ -28,7 +28,10 @@ app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
 
 @app.get("/")
 def index():
-    return FileResponse(os.path.join(BASE_DIR, "webapp", "index.html"))
+    return FileResponse(
+        os.path.join(BASE_DIR, "webapp", "index.html"),
+        headers={"Cache-Control": "no-store, must-revalidate"},
+    )
 
 
 def validate_init_data(init_data: str):
