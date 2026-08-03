@@ -155,6 +155,13 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "👑 Xush kelibsiz, Behruz aka!\n🏢 Qaysi biznes bilan ishlaymiz?",
             reply_markup=get_business_keyboard()
         )
+        if WEBAPP_URL:
+            await update.message.reply_text(
+                "📊 Barcha bizneslar hisoboti bir joyda:",
+                reply_markup=InlineKeyboardMarkup([[
+                    InlineKeyboardButton("📊 Dashboard ochish", web_app=WebAppInfo(url=WEBAPP_URL))
+                ]])
+            )
         return
 
     worker = get_worker(user_id)

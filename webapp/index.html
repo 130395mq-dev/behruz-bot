@@ -719,7 +719,7 @@
     el("live-label").textContent = isLive ? "jonli" : "namuna";
     el("note").innerHTML = (isLive
       ? "Ma'lumotlar bot bazasidan jonli olinmoqda."
-      : "Namunaviy ma'lumotlar — server bilan aloqa yo'q." + (lastErr ? " (xato: " + lastErr + ")" : "")) + " · v3";
+      : "Namunaviy ma'lumotlar — server bilan aloqa yo'q." + (lastErr ? " (xato: " + lastErr + ")" : "")) + " · v4";
   }
   function replay() {
     appEl.classList.remove("play");
@@ -746,6 +746,20 @@
 
   // ── Server bilan aloqa ──
   const getTg = () => (window.Telegram && window.Telegram.WebApp) || null;
+  function getInitData() {
+    // 1) Rasmiy SDK orqali
+    const tg = getTg();
+    if (tg && tg.initData) return tg.initData;
+    // 2) Telegram sahifani ochganda beradigan hash parametridan (SDK yuklanmasa ham ishlaydi)
+    const m = (location.hash || "").match(/tgWebAppData=([^&]+)/);
+    if (m) {
+      const raw = decodeURIComponent(m[1]);
+      try { sessionStorage.setItem("tg_init_data", raw); } catch (e) {}
+      return raw;
+    }
+    // 3) Avval saqlab qo'yilgan nusxa (sahifa qayta yuklanganda hash yo'qolishi mumkin)
+    try { return sessionStorage.getItem("tg_init_data") || ""; } catch (e) { return ""; }
+  }
   function apiToData(json) {
     // API javobini frontend formatiga o'girish (boshqa davrlar o'z holicha qoladi)
     const out = { ...DATA };
@@ -767,10 +781,9 @@
   }
   async function loadData() {
     try {
-      const tg = getTg();
       const days = PERIOD_DAYS[currentPeriod];
       const res = await fetch(`/api/dashboard?days=${days}`, {
-        headers: { "X-Telegram-Init-Data": tg ? tg.initData : "" }
+        headers: { "X-Telegram-Init-Data": getInitData() }
       });
       if (!res.ok) {
         let detail = "";
@@ -793,6 +806,7 @@
   el("refresh-btn").addEventListener("click", () => loadData().then(() => { replay(); render(); }));
 
   // ── Boshlash ──
+  getInitData(); // hash'dagi ma'lumotni darhol saqlab olamiz
   const tg0 = getTg();
   if (tg0) { try { tg0.ready(); tg0.expand(); } catch (e) {} }
   buildTabs();
