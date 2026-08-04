@@ -8,7 +8,7 @@ from telegram import (
 from telegram.ext import ContextTypes
 
 from database import (
-    add_worker, get_all_workers, remove_worker,
+    add_worker, get_all_workers, remove_worker, worker_exists_message,
     add_dress_sale, get_dress_sale, delete_dress_sale,
     get_dress_sales_range, get_dress_sales_by_worker,
 )
@@ -240,7 +240,7 @@ async def handle_dress_admin(update: Update, context: ContextTypes.DEFAULT_TYPE,
                 reply_markup=dress_admin_kb()
             )
         else:
-            await update.message.reply_text("⚠️ Bu ID allaqachon mavjud.", reply_markup=dress_admin_kb())
+            await update.message.reply_text(worker_exists_message(st["tid"]), reply_markup=dress_admin_kb())
         return
 
     if st == "dr_rm_id":

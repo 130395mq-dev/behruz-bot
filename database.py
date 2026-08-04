@@ -120,12 +120,40 @@ def dict_row(cursor, row):
     cols = [desc[0] for desc in cursor.description]
     return dict(zip(cols, row))
 
+BUSINESS_TITLES = {
+    "barbershop": "💈 Barbershop",
+    "amoria_bar": "🍸 Amoria Bar",
+    "amoria_dress": "👰 Amoria kelin libosi",
+    "imperium": "🏛 Imperium",
+}
+
+def worker_exists_message(telegram_id: int) -> str:
+    """Xodim qo'shib bo'lmaganda sababini tushuntiruvchi xabar."""
+    w = get_worker(telegram_id)
+    if w:
+        biz = BUSINESS_TITLES.get(w.get("business") or "barbershop", "boshqa biznes")
+        return (f"⚠️ Bu ID allaqachon {biz} da faol xodim: {w['name']}.\n"
+                f"Boshqa biznesga o'tkazish uchun avval o'sha biznesdan o'chiring.")
+    return "⚠️ Bu ID allaqachon mavjud."
+
 # --- WORKERS ---
 
 def add_worker(telegram_id: int, name: str, business: str = "barbershop"):
     conn = get_conn()
     try:
         c = conn.cursor()
+        c.execute("SELECT is_active FROM workers WHERE telegram_id = %s", (telegram_id,))
+        row = c.fetchone()
+        if row:
+            if row[0] == 1:
+                return False  # faol xodim sifatida allaqachon mavjud
+            # o'chirilgan xodim — qayta faollashtiramiz
+            c.execute(
+                "UPDATE workers SET is_active = 1, name = %s, business = %s WHERE telegram_id = %s",
+                (name, business, telegram_id)
+            )
+            conn.commit()
+            return True
         c.execute("INSERT INTO workers (telegram_id, name, business) VALUES (%s, %s, %s)", (telegram_id, name, business))
         conn.commit()
         return True

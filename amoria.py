@@ -9,7 +9,7 @@ from telegram import (
 from telegram.ext import ContextTypes
 
 from database import (
-    add_worker, get_all_workers, remove_worker,
+    add_worker, get_all_workers, remove_worker, worker_exists_message,
     add_amoria_booking, get_amoria_booking, delete_amoria_booking,
     get_amoria_bookings_range, get_amoria_bookings_upcoming,
     add_amoria_disco, get_amoria_disco_range,
@@ -328,7 +328,7 @@ async def handle_amoria_admin(update: Update, context: ContextTypes.DEFAULT_TYPE
                 reply_markup=amoria_admin_kb()
             )
         else:
-            await update.message.reply_text("⚠️ Bu ID allaqachon mavjud.", reply_markup=amoria_admin_kb())
+            await update.message.reply_text(worker_exists_message(st["tid"]), reply_markup=amoria_admin_kb())
         return
 
     if st == "am_rm_id":

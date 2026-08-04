@@ -13,7 +13,7 @@ from telegram.ext import (
     ContextTypes, filters, ConversationHandler
 )
 from database import (
-    init_db, get_worker, get_all_workers, add_worker, remove_worker,
+    init_db, get_worker, get_all_workers, add_worker, remove_worker, worker_exists_message,
     start_work_day, end_work_day, get_work_day, get_all_sessions,
     allow_restart, get_next_session,
     add_service, delete_last_service, get_services_by_worker_date,
@@ -730,7 +730,7 @@ async def handle_admin_message(update: Update, context: ContextTypes.DEFAULT_TYP
                 reply_markup=get_admin_keyboard()
             )
         else:
-            await update.message.reply_text("⚠️ Bu ID allaqachon mavjud.", reply_markup=get_admin_keyboard())
+            await update.message.reply_text(worker_exists_message(tid), reply_markup=get_admin_keyboard())
         return
 
     if state == "waiting_remove_id":
