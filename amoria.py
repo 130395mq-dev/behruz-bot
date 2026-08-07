@@ -48,7 +48,7 @@ def amoria_worker_kb():
     kb = [
         [KeyboardButton("📸 Yangi band"), KeyboardButton("📋 Bandlar")],
         [KeyboardButton("🍸 Disko tushum")],
-        [KeyboardButton("📖 Yo'riqnoma")],
+        [KeyboardButton("📖 Yo'riqnoma"), KeyboardButton("🏢 Biznes almashtirish")],
     ]
     return ReplyKeyboardMarkup(kb, resize_keyboard=True)
 

@@ -62,10 +62,31 @@ BUSINESS_BTN = {
 # Admin -> hozir tanlangan biznes
 current_business = {}
 
+# Admin "xodim rejimi"da yurganlar
+admin_worker_mode = set()
+
+# Universal xodim (barbershopdan tashqari) -> hozir ishlayotgan biznesi
+worker_current_business = {}
+
+# Universal xodim tanlaydigan 3 biznes
+WORKER_BIZ_BTN = {
+    "🍸 Amoria Bar": "amoria_bar",
+    "👰 Kelin libosi": "amoria_dress",
+    "🏛 Imperium": "imperium",
+}
+
 def get_business_keyboard():
     kb = [
         [KeyboardButton("💈 Barbershop"), KeyboardButton("🍸 Amoria Bar")],
         [KeyboardButton("👰 Amoria kelin libosi"), KeyboardButton("🏛 Imperium")],
+        [KeyboardButton("👤 Xodim rejimi")],
+    ]
+    return ReplyKeyboardMarkup(kb, resize_keyboard=True)
+
+def get_worker_business_keyboard():
+    kb = [
+        [KeyboardButton("🍸 Amoria Bar")],
+        [KeyboardButton("👰 Kelin libosi"), KeyboardButton("🏛 Imperium")],
     ]
     return ReplyKeyboardMarkup(kb, resize_keyboard=True)
 
@@ -147,6 +168,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if is_admin(user_id):
         current_business.pop(user_id, None)
+        admin_worker_mode.discard(user_id)
         await update.message.reply_text(
             "👑 Xush kelibsiz, Behruz aka!\n🏢 Qaysi biznes bilan ishlaymiz?",
             reply_markup=get_business_keyboard()
@@ -156,15 +178,11 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     worker = get_worker(user_id)
     if worker:
         biz = worker.get("business") or "barbershop"
-        if biz == "amoria_bar":
+        if biz != "barbershop":
+            # Universal xodim — 3 biznesdan birini tanlaydi
             await update.message.reply_text(
-                f"🍸 Salom, {worker['name']}! Amoria Bar.",
-                reply_markup=amoria_worker_kb()
-            )
-        elif biz in BIZ_CONF:
-            await update.message.reply_text(
-                f"Salom, {worker['name']}! {BIZ_CONF[biz]['title']}.",
-                reply_markup=dress_worker_kb()
+                f"Salom, {worker['name']}!\n🏢 Qaysi biznes bilan ishlaysiz?",
+                reply_markup=get_worker_business_keyboard()
             )
         else:
             await update.message.reply_text(
@@ -194,6 +212,97 @@ async def handle_service(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
 
     if is_admin(user_id):
+        # ── Xodim rejimiga o'tish ──
+        if text == "👤 Xodim rejimi":
+            w = get_worker(user_id)
+            if not w:
+                await update.message.reply_text(
+                    "⚠️ Siz hali xodim sifatida qo'shilmagansiz.\n"
+                    "Biror biznesga kirib '➕ Xodim qo'shish' orqali o'z ID'ingizni qo'shing:\n"
+                    f"🆔 {user_id}",
+                    reply_markup=get_business_keyboard()
+                )
+                return
+            admin_worker_mode.add(user_id)
+            current_business.pop(user_id, None)
+            admin_state.pop(user_id, None)
+            amoria_state.pop(user_id, None)
+            dress_state.pop(user_id, None)
+            if (w.get("business") or "barbershop") == "barbershop":
+                await update.message.reply_text(
+                    f"👤 Xodim rejimi\nSalom, {w['name']}! 💈",
+                    reply_markup=get_worker_keyboard()
+                )
+            else:
+                await update.message.reply_text(
+                    "👤 Xodim rejimi\n🏢 Qaysi biznes bilan ishlaysiz?\n\n"
+                    "👑 Admin rejimiga qaytish: /start",
+                    reply_markup=get_worker_business_keyboard()
+                )
+            return
+
+        if user_id in admin_worker_mode:
+            # ── Admin rejimiga qaytish ──
+            if text == "👑 Admin panel":
+                admin_worker_mode.discard(user_id)
+                worker_current_business.pop(user_id, None)
+                admin_state.pop(user_id, None)
+                amoria_state.pop(user_id, None)
+                dress_state.pop(user_id, None)
+                await update.message.reply_text(
+                    "👑 Admin rejimi\n🏢 Qaysi biznes bilan ishlaymiz?",
+                    reply_markup=get_business_keyboard()
+                )
+                return
+            # aks holda pastdagi xodim oqimiga o'tadi
+        else:
+            await handle_admin_flow(update, context)
+            return
+
+    worker = get_worker(user_id)
+    if not worker:
+        if is_admin(user_id):
+            admin_worker_mode.discard(user_id)
+            await update.message.reply_text("⚠️ Xodim yozuvingiz topilmadi.", reply_markup=get_business_keyboard())
+        else:
+            await update.message.reply_text("❌ Siz tizimda yo'qsiz.")
+        return
+
+    worker_biz = worker.get("business") or "barbershop"
+
+    # ── Universal xodim (Amoria Bar / Kelin libosi / Imperium — 3 biznesda ham ishlaydi) ──
+    if worker_biz != "barbershop":
+        if text in WORKER_BIZ_BTN:
+            cur = WORKER_BIZ_BTN[text]
+            worker_current_business[user_id] = cur
+            amoria_state.pop(user_id, None)
+            dress_state.pop(user_id, None)
+            if cur == "amoria_bar":
+                await update.message.reply_text("🍸 Amoria Bar", reply_markup=amoria_worker_kb())
+            else:
+                await update.message.reply_text(BIZ_CONF[cur]["title"], reply_markup=dress_worker_kb())
+            return
+        if text == "🏢 Biznes almashtirish":
+            amoria_state.pop(user_id, None)
+            dress_state.pop(user_id, None)
+            await update.message.reply_text("🏢 Qaysi biznes bilan ishlaysiz?", reply_markup=get_worker_business_keyboard())
+            return
+        cur = worker_current_business.get(user_id) or worker_biz
+        worker_current_business[user_id] = cur
+        if cur == "amoria_bar":
+            await handle_amoria_worker(update, context, worker)
+        else:
+            await handle_dress_worker(update, context, {**worker, "business": cur})
+        return
+
+    await handle_barber_worker(update, context, worker)
+
+
+async def handle_admin_flow(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    text = update.message.text
+
+    if True:
         # ── Biznes tanlash ──
         if text in BUSINESS_BTN:
             biz = BUSINESS_BTN[text]
@@ -234,21 +343,9 @@ async def handle_service(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("🏢 Avval biznesni tanlang:", reply_markup=get_business_keyboard())
         return
 
-    worker = get_worker(user_id)
-    if not worker:
-        await update.message.reply_text("❌ Siz tizimda yo'qsiz.")
-        return
-
-    # ── Amoria Bar xodimi ──
-    worker_biz = worker.get("business") or "barbershop"
-    if worker_biz == "amoria_bar":
-        await handle_amoria_worker(update, context, worker)
-        return
-
-    # ── Kelin libosi / Imperium xodimi ──
-    if worker_biz in BIZ_CONF:
-        await handle_dress_worker(update, context, worker)
-        return
+async def handle_barber_worker(update: Update, context: ContextTypes.DEFAULT_TYPE, worker):
+    user_id = update.effective_user.id
+    text = update.message.text
 
     today = get_now().strftime("%Y-%m-%d")
     work_day = get_work_day(worker["id"], today)

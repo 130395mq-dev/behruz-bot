@@ -57,7 +57,7 @@ def disp_date(ymd):
 def dress_worker_kb():
     kb = [
         [KeyboardButton("➕ Yangi savdo"), KeyboardButton("📋 Savdolarim")],
-        [KeyboardButton("📖 Yo'riqnoma")],
+        [KeyboardButton("📖 Yo'riqnoma"), KeyboardButton("🏢 Biznes almashtirish")],
     ]
     return ReplyKeyboardMarkup(kb, resize_keyboard=True)
 
